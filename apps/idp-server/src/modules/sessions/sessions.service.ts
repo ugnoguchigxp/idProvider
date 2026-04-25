@@ -10,7 +10,7 @@ export class SessionService {
 
   async listSessions(userId: string) {
     const sessions = await this.deps.sessionRepository.findAllByUserId(userId);
-    return ok(sessions);
+    return ok({ sessions });
   }
 
   async revokeSession(userId: string, sessionId: string) {
@@ -18,7 +18,7 @@ export class SessionService {
     if (session && session.userId === userId) {
       await this.deps.sessionRepository.revoke(sessionId);
     }
-    return ok({ status: "revoked" });
+    return ok({ status: "revoked", sessionId });
   }
 
   async revokeAllSessions(userId: string) {

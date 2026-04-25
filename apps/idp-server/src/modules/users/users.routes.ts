@@ -104,6 +104,13 @@ export const createUserRoutes = (deps: UserRoutesDependencies) => {
           payload.currentPassword,
         );
         const social = await deps.configService.getSocialLoginConfig("google");
+        if (!social.providerEnabled) {
+          throw new ApiError(
+            403,
+            "provider_disabled",
+            "Google identity linking is disabled",
+          );
+        }
         const clientId = social.clientId || deps.env.GOOGLE_CLIENT_ID;
         const result = await deps.userService.linkGoogleIdentity({
           userId: auth.userId,

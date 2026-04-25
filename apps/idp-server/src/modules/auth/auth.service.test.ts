@@ -80,6 +80,12 @@ describe("AuthService", () => {
       });
       const result = await service.signup("a@b.com", "pass1234", "Test User");
       expect(result.ok).toBe(true);
+      expect(deps.userRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: "a@b.com",
+          displayName: "Test User",
+        }),
+      );
       expect(deps.verificationRepository.createEmailToken).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: "u1",

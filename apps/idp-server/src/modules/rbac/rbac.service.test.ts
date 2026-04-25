@@ -16,7 +16,7 @@ describe("RBACService", () => {
 
   describe("getAuthorizationSnapshot", () => {
     it("should return snapshot with permissions", async () => {
-      repository.listPermissionKeys.mockResolvedValue(["read:user"]);
+      repository.listPermissionKeys.mockResolvedValue(["user:read"]);
       repository.listAllActiveEntitlementKeys.mockResolvedValue(["k1"]);
       repository.findEntitlement.mockResolvedValue({
         key: "k1",
@@ -25,20 +25,32 @@ describe("RBACService", () => {
       });
 
       const result = await service.getAuthorizationSnapshot("u1");
-      expect(result.permissions).toContain("read:user");
+      expect(result.permissions).toContain("user:read");
       expect(result.entitlements.k1).toBe(true);
     });
   });
 
   describe("authorizationCheck", () => {
     it("should allow if permission exists", async () => {
-      repository.listPermissionKeys.mockResolvedValue(["read:user"]);
+      repository.listPermissionKeys.mockResolvedValue(["user:read"]);
       const result = await service.authorizationCheck({
         userId: "u1",
         action: "read",
         resource: "user",
       });
       expect(result.allowed).toBe(true);
+      expect(result.permissionKey).toBe("user:read");
+    });
+
+    it("should allow resource all wildcard permissions", async () => {
+      repository.listPermissionKeys.mockResolvedValue(["admin:all"]);
+      const result = await service.authorizationCheck({
+        userId: "u1",
+        action: "manage",
+        resource: "admin",
+      });
+      expect(result.allowed).toBe(true);
+      expect(result.permissionKey).toBe("admin:manage");
     });
 
     it("should deny if permission missing", async () => {

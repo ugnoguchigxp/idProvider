@@ -36,9 +36,9 @@ describe("SessionService", () => {
       const result = await sessionService.listSessions("u1");
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value).toHaveLength(1);
-        if (result.value[0]) {
-          expect(result.value[0].id).toBe("s1");
+        expect(result.value.sessions).toHaveLength(1);
+        if (result.value.sessions[0]) {
+          expect(result.value.sessions[0].id).toBe("s1");
         }
       }
     });
@@ -53,6 +53,9 @@ describe("SessionService", () => {
 
       const result = await sessionService.revokeSession("u1", "s1");
       expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.sessionId).toBe("s1");
+      }
       expect(deps.sessionRepository.revoke).toHaveBeenCalledWith("s1");
     });
 

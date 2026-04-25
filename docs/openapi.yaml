@@ -159,6 +159,10 @@ components:
         mfaFactorId:
           type: string
           format: uuid
+        mfaRecoveryCode:
+          type: string
+          minLength: 20
+          maxLength: 32
 
     GoogleLoginRequest:
       type: object
@@ -174,6 +178,10 @@ components:
         mfaFactorId:
           type: string
           format: uuid
+        mfaRecoveryCode:
+          type: string
+          minLength: 20
+          maxLength: 32
 
     LoginResponse:
       type: object
@@ -207,6 +215,18 @@ components:
         refreshExpiresAt:
           type: string
           format: date-time
+
+    MfaRequiredResponse:
+      type: object
+      additionalProperties: false
+      required: [mfaRequired, userId]
+      properties:
+        mfaRequired:
+          type: boolean
+          enum: [true]
+        userId:
+          type: string
+          format: uuid
 
     RefreshRequest:
       type: object
@@ -301,6 +321,42 @@ components:
           type: string
           enum: [ok]
 
+    LoggedOutResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [logged_out]
+
+    VerifiedResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [verified]
+
+    ResetResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [reset]
+
+    ChangedResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [changed]
+
     PasswordResetRequest:
       type: object
       additionalProperties: false
@@ -321,6 +377,8 @@ components:
         accepted:
           type: boolean
           enum: [true]
+        token:
+          type: string
 
     PasswordResetConfirmRequest:
       type: object
@@ -617,6 +675,19 @@ components:
           type: string
           enum: [revoked_all]
 
+    WebAuthnRegistrationResponse:
+      type: object
+      additionalProperties: false
+      required: [success]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        recoveryCodes:
+          type: array
+          items:
+            type: string
+
     GoogleLinkRequest:
       type: object
       additionalProperties: false
@@ -866,7 +937,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LoginResponse'
+                oneOf:
+                  - $ref: '#/components/schemas/LoginResponse'
+                  - $ref: '#/components/schemas/MfaRequiredResponse'
         '401':
           description: Invalid credentials
           content:
@@ -903,7 +976,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LoginResponse'
+                oneOf:
+                  - $ref: '#/components/schemas/LoginResponse'
+                  - $ref: '#/components/schemas/MfaRequiredResponse'
         '400':
           description: Invalid Google ID Token
           content:
@@ -1025,7 +1100,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusOkResponse'
+                $ref: '#/components/schemas/VerifiedResponse'
         '400':
           description: Invalid verification token
           content:
@@ -1081,7 +1156,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusOkResponse'
+                $ref: '#/components/schemas/ResetResponse'
         '400':
           description: Invalid reset token
           content:
@@ -1178,7 +1253,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusOkResponse'
+                $ref: '#/components/schemas/LoggedOutResponse'
         '401':
           description: Unauthorized
           content:
@@ -1232,7 +1307,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusOkResponse'
+                $ref: '#/components/schemas/VerifiedResponse'
         '400':
           description: Invalid MFA code
           content:
@@ -1286,7 +1361,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusOkResponse'
+                $ref: '#/components/schemas/WebAuthnRegistrationResponse'
         '400':
           description: Verification failed
           content:
@@ -1437,7 +1512,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatusOkResponse'
+                $ref: '#/components/schemas/ChangedResponse'
         '401':
           description: Unauthorized or invalid password
           content:

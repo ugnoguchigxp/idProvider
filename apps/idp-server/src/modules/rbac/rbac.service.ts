@@ -53,13 +53,16 @@ export class RBACService {
       } as { organizationId?: string; groupId?: string },
     );
 
-    const requiredPermission = `${input.action}:${input.resource}`;
+    const requiredPermission = `${input.resource}:${input.action}`;
+    const resourceWildcardPermission = `${input.resource}:all`;
     const allowed =
-      permissions.includes(requiredPermission) || permissions.includes("*");
+      permissions.includes(requiredPermission) ||
+      permissions.includes(resourceWildcardPermission) ||
+      permissions.includes("*");
 
     return {
       allowed,
-      permissionKey: allowed ? requiredPermission : null,
+      permissionKey: requiredPermission,
       source: allowed ? "rbac" : null,
     };
   }

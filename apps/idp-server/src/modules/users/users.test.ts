@@ -201,6 +201,29 @@ describe("User Routes", () => {
     expect(res.status).toBe(200);
   });
 
+  it("POST /v1/identities/google/link should reject when Google is disabled", async () => {
+    deps.configService.getSocialLoginConfig.mockResolvedValueOnce({
+      providerEnabled: false,
+      clientId: "google-client-id",
+      clientSecret: "google-client-secret",
+    });
+
+    const res = await app.request("/v1/identities/google/link", {
+      method: "POST",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        currentPassword: "password_long_enough_8",
+        idToken: "itok",
+      }),
+    });
+
+    expect(res.status).toBe(403);
+    expect(deps.userService.linkGoogleIdentity).not.toHaveBeenCalled();
+  });
+
   it("POST /v1/identities/google/unlink should succeed", async () => {
     const res = await app.request("/v1/identities/google/unlink", {
       method: "POST",

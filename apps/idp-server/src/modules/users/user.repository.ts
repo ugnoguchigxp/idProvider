@@ -103,6 +103,7 @@ export class UserRepository extends BaseRepository {
     input: {
       email: string;
       passwordHash: string;
+      displayName?: string;
       status?: "active" | "suspended" | "deleted";
     },
     tx?: DbTransaction | DbClient,
@@ -130,6 +131,13 @@ export class UserRepository extends BaseRepository {
         userId: user.id,
         passwordHash: input.passwordHash,
       });
+
+      if (input.displayName) {
+        await db.insert(userProfiles).values({
+          userId: user.id,
+          displayName: input.displayName,
+        });
+      }
 
       return user;
     }, tx);

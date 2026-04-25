@@ -40,7 +40,7 @@ describe("Session Routes Integration", () => {
 
   it("GET /v1/sessions should list sessions", async () => {
     deps.sessionService.listSessions.mockResolvedValue(
-      ok([{ id: randomUUID(), ipAddress: "127.0.0.1" }]),
+      ok({ sessions: [{ id: randomUUID(), ipAddress: "127.0.0.1" }] }),
     );
 
     const res = await app.request("/v1/sessions", {
@@ -49,13 +49,13 @@ describe("Session Routes Integration", () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toHaveLength(1);
+    expect(body.sessions).toHaveLength(1);
   });
 
   it("POST /v1/sessions/revoke should revoke session", async () => {
     const sessionId = randomUUID();
     deps.sessionService.revokeSession.mockResolvedValue(
-      ok({ status: "revoked" }),
+      ok({ status: "revoked", sessionId }),
     );
 
     const res = await app.request("/v1/sessions/revoke", {

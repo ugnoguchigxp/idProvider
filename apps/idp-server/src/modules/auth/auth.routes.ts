@@ -60,6 +60,33 @@ export const createAuthRoutes = (deps: AuthRoutesDependencies) => {
       { append: true },
     );
   };
+  const toOAuthTokenResponse = (value: {
+    accessToken: string;
+    refreshToken: string;
+    accessExpiresAt: string;
+  }) => ({
+    token_type: "Bearer" as const,
+    access_token: value.accessToken,
+    refresh_token: value.refreshToken,
+    expires_in: Math.max(
+      1,
+      Math.floor((Date.parse(value.accessExpiresAt) - Date.now()) / 1000),
+    ),
+  });
+  const toSignupResponse = (
+    payload: { email: string },
+    value: { user: { id: string }; verificationToken: string },
+  ) => ({
+    status: "accepted" as const,
+    user: {
+      userId: value.user.id,
+      email: payload.email,
+    },
+    verification:
+      deps.env.NODE_ENV === "production"
+        ? { required: true as const }
+        : { required: true as const, token: value.verificationToken },
+  });
 
   app.post(
     "/v1/signup",
@@ -82,7 +109,7 @@ export const createAuthRoutes = (deps: AuthRoutesDependencies) => {
           payload.displayName,
         );
         if (!result.ok) throw result.error;
-        return { user: result.value.user };
+        return toSignupResponse(payload, result.value);
       },
     }),
   );
@@ -160,10 +187,14 @@ export const createAuthRoutes = (deps: AuthRoutesDependencies) => {
     "/oauth/token",
     publicEndpointAdapter({
       schema: refreshRequestSchema,
-      handler: async (_c, payload) => {
+      handler: async (c, payload) => {
+        assertOAuthClientAuth(c.req.header("authorization"), {
+          clientId: deps.env.OAUTH_CLIENT_ID,
+          clientSecret: deps.env.OAUTH_CLIENT_SECRET,
+        });
         const result = await deps.authService.refresh(payload.refreshToken);
         if (!result.ok) throw result.error;
-        return result.value;
+        return toOAuthTokenResponse(result.value);
       },
     }),
   );
@@ -292,7 +323,7 @@ export const createAuthRoutes = (deps: AuthRoutesDependencies) => {
         );
         if (!result.ok) throw result.error;
         return deps.env.NODE_ENV === "production"
-          ? { status: "accepted" }
+          ? { status: "accepted" as const, accepted: true as const }
           : result.value;
       },
     }),

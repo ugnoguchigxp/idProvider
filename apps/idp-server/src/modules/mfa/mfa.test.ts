@@ -10,11 +10,17 @@ describe("MFA Routes", () => {
     deps = {
       authService: {
         authenticateAccessToken: vi.fn().mockResolvedValue({ userId: "u1" }),
-        createSessionForUser: vi
-          .fn()
-          .mockResolvedValue(
-            ok({ accessToken: "at", refreshToken: "rt", mfaEnabled: false }),
-          ),
+        createSessionForUser: vi.fn().mockResolvedValue(
+          ok({
+            status: "ok",
+            userId: "u1",
+            accessToken: "at",
+            refreshToken: "rt",
+            accessExpiresAt: new Date().toISOString(),
+            refreshExpiresAt: new Date().toISOString(),
+            mfaEnabled: true,
+          }),
+        ),
       },
       mfaService: {
         enrollMfa: vi
@@ -57,7 +63,11 @@ describe("MFA Routes", () => {
         getNotificationConfig: vi.fn(),
         getEmailTemplateConfig: vi.fn(),
       },
-      env: { OIDC_ISSUER: "https://issuer.com" },
+      env: {
+        OIDC_ISSUER: "https://issuer.com",
+        RATE_LIMIT_LOGIN_PER_MIN: 10,
+        WEBAUTHN_RP_ID: "localhost",
+      },
       logger: { info: vi.fn(), error: vi.fn() },
     };
     app = buildApp(deps);
@@ -159,5 +169,48 @@ describe("MFA Routes", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.accessToken).toBe("at");
+  });
+
+  it("POST /v1/mfa/webauthn/authenticate/verify should mask verification failures", async () => {
+    deps.webauthnService.verifyAuthenticationResponse.mockRejectedValueOnce(
+      new Error("credential not found"),
+    );
+
+    const res = await app.request("/v1/mfa/webauthn/authenticate/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "test@example.com",
+        response: { id: "cid", rawId: "cid", type: "public-key", response: {} },
+      }),
+    });
+
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.code).toBe("invalid_credentials");
+  });
+
+  it("POST /v1/mfa/webauthn/authenticate/options should not enumerate unknown email", async () => {
+    deps.userService.findActiveUserIdByEmail.mockResolvedValueOnce(null);
+
+    const res = await app.request("/v1/mfa/webauthn/authenticate/options", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "missing@example.com" }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(typeof body.challenge).toBe("string");
+    expect(body).toEqual(
+      expect.objectContaining({
+        allowCredentials: [],
+        rpId: "localhost",
+        userVerification: "required",
+      }),
+    );
+    expect(
+      deps.webauthnService.generateAuthenticationOptions,
+    ).not.toHaveBeenCalled();
   });
 });

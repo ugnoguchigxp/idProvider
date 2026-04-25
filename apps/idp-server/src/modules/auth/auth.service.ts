@@ -91,7 +91,7 @@ export class AuthService {
     throw new ApiError(401, "mfa_required", "MFA verification is required");
   }
 
-  async signup(email: string, password: string, _displayName: string) {
+  async signup(email: string, password: string, displayName: string) {
     const existing = await this.deps.userRepository.findByEmail(email);
     if (existing)
       throw new ApiError(409, "email_exists", "Email already registered");
@@ -100,6 +100,7 @@ export class AuthService {
     const user = await this.deps.userRepository.create({
       email,
       passwordHash,
+      displayName,
     });
 
     const verificationToken = createOpaqueToken("ev");
@@ -160,9 +161,13 @@ export class AuthService {
 
     const session = await this.createSession(user.id, ipAddress, userAgent);
     return ok({
+      status: "ok",
+      userId: user.id,
       accessToken: session.accessToken,
       refreshToken: session.refreshToken,
-      mfaEnabled: false,
+      accessExpiresAt: session.accessExpiresAt,
+      refreshExpiresAt: session.refreshExpiresAt,
+      mfaEnabled,
     });
   }
 
@@ -207,6 +212,7 @@ export class AuthService {
     }
 
     return ok({
+      userId: session.userId,
       accessToken: nextAccessToken,
       refreshToken: nextRefreshToken,
       accessExpiresAt: accessExpiresAt.toISOString(),
@@ -292,7 +298,9 @@ export class AuthService {
 
   async requestEmailVerification(email: string) {
     const user = await this.deps.userRepository.findByEmail(email);
-    if (!user || user.status !== "active") return ok({ status: "accepted" });
+    if (!user || user.status !== "active") {
+      return ok({ status: "accepted", accepted: true });
+    }
 
     const token = createOpaqueToken("ev");
     await this.deps.verificationRepository.createEmailToken({
@@ -301,7 +309,7 @@ export class AuthService {
       expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     });
 
-    return ok({ status: "accepted", token });
+    return ok({ status: "accepted", accepted: true, token });
   }
 
   async confirmEmailVerification(token: string) {
@@ -369,9 +377,13 @@ export class AuthService {
 
     const session = await this.createSession(userId, ipAddress, userAgent);
     return ok({
+      status: "ok",
+      userId,
       accessToken: session.accessToken,
       refreshToken: session.refreshToken,
-      mfaEnabled: false,
+      accessExpiresAt: session.accessExpiresAt,
+      refreshExpiresAt: session.refreshExpiresAt,
+      mfaEnabled: true,
     });
   }
 
@@ -470,8 +482,9 @@ export class AuthService {
     const hasLocalPassword = Boolean(
       await this.deps.userRepository.findWithPasswordById(userId),
     );
+    let mfaEnabled = false;
     if (hasLocalPassword) {
-      const mfaEnabled = await this.deps.mfaService.hasEnabledMfa(userId);
+      mfaEnabled = await this.deps.mfaService.hasEnabledMfa(userId);
       if (mfaEnabled && !input.mfaCode && !input.mfaRecoveryCode) {
         return ok({ mfaRequired: true, userId });
       }
@@ -490,9 +503,13 @@ export class AuthService {
       input.userAgent,
     );
     return ok({
+      status: "ok",
+      userId,
       accessToken: session.accessToken,
       refreshToken: session.refreshToken,
-      mfaEnabled: false,
+      accessExpiresAt: session.accessExpiresAt,
+      refreshExpiresAt: session.refreshExpiresAt,
+      mfaEnabled,
     });
   }
 
@@ -520,6 +537,12 @@ export class AuthService {
       userAgent,
     });
 
-    return { sessionId: session?.id, accessToken, refreshToken };
+    return {
+      sessionId: session?.id,
+      accessToken,
+      refreshToken,
+      accessExpiresAt: expiresAt.toISOString(),
+      refreshExpiresAt: refreshExpiresAt.toISOString(),
+    };
   }
 }

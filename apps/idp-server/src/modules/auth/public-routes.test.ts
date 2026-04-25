@@ -101,7 +101,11 @@ describe("Public Routes (via buildApp)", () => {
     });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.user.id).toBe("u-1");
+    expect(body).toEqual({
+      status: "accepted",
+      user: { userId: "u-1", email: "test@example.com" },
+      verification: { required: true, token: "v-1" },
+    });
   });
 
   it("POST /v1/login works", async () => {
@@ -123,5 +127,44 @@ describe("Public Routes (via buildApp)", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.accessToken).toBe("at");
+  });
+
+  it("POST /oauth/token requires client auth and returns OAuth response shape", async () => {
+    deps.authService.refresh.mockResolvedValue(
+      ok({
+        userId: "u1",
+        accessToken: "at",
+        refreshToken: "rt",
+        accessExpiresAt: new Date(Date.now() + 900_000).toISOString(),
+        refreshExpiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+      }),
+    );
+
+    const unauthenticated = await app.request("/oauth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken: "rt_mock_token_long_enough_16" }),
+    });
+    expect(unauthenticated.status).toBe(401);
+
+    const authenticated = await app.request("/oauth/token", {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${Buffer.from("client:secret").toString("base64")}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ refreshToken: "rt_mock_token_long_enough_16" }),
+    });
+
+    expect(authenticated.status).toBe(200);
+    const body = await authenticated.json();
+    expect(body).toEqual(
+      expect.objectContaining({
+        token_type: "Bearer",
+        access_token: "at",
+        refresh_token: "rt",
+      }),
+    );
+    expect(body.expires_in).toBeGreaterThan(0);
   });
 });

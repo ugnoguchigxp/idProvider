@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type { WebAuthnService } from "@idp/auth-core";
 import {
   ApiError,
@@ -12,6 +13,8 @@ import {
 import { Hono } from "hono";
 import { authenticatedEndpointAdapter } from "../../adapters/authenticated-endpoint-adapter.js";
 import { publicEndpointAdapter } from "../../adapters/public-endpoint-adapter.js";
+import type { AppEnv } from "../../config/env.js";
+import type { RateLimiter } from "../../core/rate-limiter.js";
 import { getIpAddress } from "../../utils/ip-address.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { UserService } from "../users/users.service.js";
@@ -24,6 +27,8 @@ export type MfaRoutesDependencies = {
   userService: UserService;
   authService: AuthService;
   webauthnService: WebAuthnService;
+  rateLimiter: RateLimiter;
+  env: AppEnv;
 };
 
 export const createMfaRoutes = (deps: MfaRoutesDependencies) => {
@@ -37,16 +42,22 @@ export const createMfaRoutes = (deps: MfaRoutesDependencies) => {
     "/v1/mfa/webauthn/authenticate/options",
     publicEndpointAdapter({
       schema: webauthnAuthenticationOptionsSchema,
-      handler: async (_c, payload) => {
+      handler: async (c, payload) => {
+        const ipAddress = getIpAddress(c.req.header("x-forwarded-for"));
+        const rate = await deps.rateLimiter.consume(
+          `webauthn-auth-options:${payload.email}:${ipAddress ?? "unknown"}`,
+          deps.env.RATE_LIMIT_LOGIN_PER_MIN,
+          60,
+        );
+        if (!rate.allowed) {
+          throw new ApiError(429, "rate_limited", "Too many login attempts");
+        }
+
         const userId = await deps.userService.findActiveUserIdByEmail(
           payload.email,
         );
         if (!userId) {
-          throw new ApiError(
-            401,
-            "invalid_credentials",
-            "Invalid authentication request",
-          );
+          return createUnavailableWebAuthnOptions(deps.env.WEBAUTHN_RP_ID);
         }
         return deps.webauthnService.generateAuthenticationOptions(userId);
       },
@@ -58,6 +69,16 @@ export const createMfaRoutes = (deps: MfaRoutesDependencies) => {
     publicEndpointAdapter({
       schema: webauthnAuthenticationVerifySchema,
       handler: async (c, payload) => {
+        const ipAddress = getIpAddress(c.req.header("x-forwarded-for"));
+        const rate = await deps.rateLimiter.consume(
+          `webauthn-auth-verify:${payload.email}:${ipAddress ?? "unknown"}`,
+          deps.env.RATE_LIMIT_LOGIN_PER_MIN,
+          60,
+        );
+        if (!rate.allowed) {
+          throw new ApiError(429, "rate_limited", "Too many login attempts");
+        }
+
         const userId = await deps.userService.findActiveUserIdByEmail(
           payload.email,
         );
@@ -69,13 +90,21 @@ export const createMfaRoutes = (deps: MfaRoutesDependencies) => {
           );
         }
 
-        await deps.webauthnService.verifyAuthenticationResponse(
-          userId,
-          payload.response,
-        );
+        try {
+          await deps.webauthnService.verifyAuthenticationResponse(
+            userId,
+            payload.response,
+          );
+        } catch {
+          throw new ApiError(
+            401,
+            "invalid_credentials",
+            "Invalid authentication request",
+          );
+        }
         const result = await deps.authService.createSessionForUser(
           userId,
-          getIpAddress(c.req.header("x-forwarded-for")),
+          ipAddress,
           c.req.header("user-agent") || null,
         );
         if (!result.ok) throw result.error;
@@ -199,3 +228,11 @@ export const createMfaRoutes = (deps: MfaRoutesDependencies) => {
 
   return app;
 };
+
+const createUnavailableWebAuthnOptions = (rpID: string) => ({
+  challenge: randomBytes(32).toString("base64url"),
+  timeout: 60000,
+  rpId: rpID,
+  allowCredentials: [],
+  userVerification: "required" as const,
+});
