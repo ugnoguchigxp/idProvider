@@ -153,6 +153,27 @@ components:
           type: string
           minLength: 1
           maxLength: 128
+        mfaCode:
+          type: string
+          pattern: '^\d{6}$'
+        mfaFactorId:
+          type: string
+          format: uuid
+
+    GoogleLoginRequest:
+      type: object
+      additionalProperties: false
+      required: [idToken]
+      properties:
+        idToken:
+          type: string
+          minLength: 1
+        mfaCode:
+          type: string
+          pattern: '^\d{6}$'
+        mfaFactorId:
+          type: string
+          format: uuid
 
     LoginResponse:
       type: object
@@ -460,18 +481,11 @@ components:
     GoogleLinkRequest:
       type: object
       additionalProperties: false
-      required: [providerSubject, email, emailVerified, currentPassword]
+      required: [idToken, currentPassword]
       properties:
-        providerSubject:
+        idToken:
           type: string
           minLength: 1
-          maxLength: 255
-        email:
-          type: string
-          format: email
-        emailVerified:
-          type: boolean
-          enum: [true]
         currentPassword:
           type: string
           minLength: 8
@@ -733,6 +747,43 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /v1/login/google:
+    post:
+      tags: [auth-public]
+      operationId: postV1LoginGoogle
+      summary: Login or sign up with Google ID Token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoogleLoginRequest'
+      responses:
+        '200':
+          description: Login success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          description: Invalid Google ID Token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: MFA required or invalid MFA code for linked local accounts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Google login disabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /oauth/token:
     post:
       tags: [oauth]
@@ -811,6 +862,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /v1/email/verify/confirm:
     post:
@@ -857,6 +914,12 @@ paths:
                 $ref: '#/components/schemas/PasswordResetRequestResponse'
         '400':
           description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
           content:
             application/json:
               schema:
@@ -984,6 +1047,134 @@ paths:
                 $ref: '#/components/schemas/StatusOkResponse'
         '400':
           description: Invalid MFA code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/mfa/webauthn/register/options:
+    get:
+      tags: [auth-protected]
+      operationId: getV1MfaWebAuthnRegisterOptions
+      summary: Get WebAuthn registration options (Passkey)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Registration options generated
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/mfa/webauthn/register/verify:
+    post:
+      tags: [auth-protected]
+      operationId: postV1MfaWebAuthnRegisterVerify
+      summary: Verify WebAuthn registration (Passkey)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [response]
+              properties:
+                name:
+                  type: string
+                response:
+                  type: object
+      responses:
+        '200':
+          description: Passkey registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusOkResponse'
+        '400':
+          description: Verification failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/mfa/webauthn/authenticate/options:
+    post:
+      tags: [auth-public]
+      operationId: postV1MfaWebAuthnAuthenticateOptions
+      summary: Get WebAuthn authentication options (Passkey)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: Authentication options generated
+          content:
+            application/json:
+              schema:
+                type: object
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/mfa/webauthn/authenticate/verify:
+    post:
+      tags: [auth-public]
+      operationId: postV1MfaWebAuthnAuthenticateVerify
+      summary: Verify WebAuthn authentication (Passkey)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, response]
+              properties:
+                email:
+                  type: string
+                  format: email
+                response:
+                  type: object
+      responses:
+        '200':
+          description: Login success via Passkey
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          description: Verification failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid authentication request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
           content:
             application/json:
               schema:

@@ -5,6 +5,7 @@ import {
   ConfigService,
   createRedisClient,
   KeyStoreService,
+  WebAuthnService,
 } from "@idp/auth-core";
 import { createDb } from "@idp/db";
 import { buildApp } from "./app.js";
@@ -19,6 +20,16 @@ const bootstrap = async () => {
   const logger = createLogger(env.LOG_LEVEL);
   const { db, pool } = createDb(env.DATABASE_URL);
   const configService = new ConfigService(db);
+  const redis = createRedisClient(env.REDIS_URL);
+  const onSecurityEvent = createSecurityNotifier(configService, logger);
+
+  const webauthnService = new WebAuthnService(db, redis, {
+    rpName: env.WEBAUTHN_RP_NAME,
+    rpID: env.WEBAUTHN_RP_ID,
+    origin: env.WEBAUTHN_ORIGIN,
+    onSecurityEvent,
+  });
+
   const authService = new AuthService(db, {
     accessTokenTtlSeconds: env.ACCESS_TOKEN_TTL_SECONDS,
     refreshTokenTtlSeconds: env.REFRESH_TOKEN_TTL_SECONDS,
@@ -28,13 +39,14 @@ const bootstrap = async () => {
       parallelism: env.ARGON2_PARALLELISM,
     },
     mfaIssuer: env.MFA_ISSUER,
-    onSecurityEvent: createSecurityNotifier(configService, logger),
+    onSecurityEvent,
   });
+
   const keyStore = new KeyStoreService(db, {
     rotationIntervalHours: env.JWKS_ROTATION_INTERVAL_HOURS,
     gracePeriodHours: env.JWKS_GRACE_PERIOD_HOURS,
   });
-  const redis = createRedisClient(env.REDIS_URL);
+
   const rateLimiter = new RateLimiter(redis);
 
   await keyStore.rotateIfDue();
@@ -42,6 +54,7 @@ const bootstrap = async () => {
   const app = buildApp({
     env,
     authService,
+    webauthnService,
     configService,
     keyStore,
     redis,

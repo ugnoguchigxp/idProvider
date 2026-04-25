@@ -6,4 +6,7 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
   exit 1
 fi
 
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f infra/migrations/0001_initial.sql
+for f in infra/migrations/*.sql; do
+  echo "Applying migration: $f"
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
+done

@@ -29,6 +29,7 @@
     "retention:run": "pnpm --filter @idp/idp-server retention:run",
     "retention:dry-run": "pnpm --filter @idp/idp-server retention:dry-run",
     "db:migrate": "bash ./scripts/migrate.sh",
+    "db:seed": "pnpm --filter @idp/idp-server db:seed",
     "stack:up": "docker compose -f infra/docker-compose.yml up -d",
     "stack:down": "docker compose -f infra/docker-compose.yml down",
     "prepare": "husky"

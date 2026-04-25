@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   ApiError,
   emailVerificationConfirmSchema,
@@ -8,6 +9,8 @@ import {
   passwordResetRequestSchema,
   refreshRequestSchema,
   signupRequestSchema,
+  webauthnAuthenticationOptionsSchema,
+  webauthnAuthenticationVerifySchema,
 } from "@idp/shared";
 import { Hono } from "hono";
 import { publicEndpointAdapter } from "../adapters/public-endpoint-adapter.js";
@@ -40,6 +43,93 @@ const renderTemplate = (
 
 export const buildPublicRoutes = (deps: AppDependencies) => {
   const app = new Hono();
+
+  app.post(
+    "/v1/mfa/webauthn/authenticate/options",
+    publicEndpointAdapter({
+      schema: webauthnAuthenticationOptionsSchema,
+      handler: async (c, payload) => {
+        const ipAddress = getIpAddress(c.req.header("x-forwarded-for"));
+        const rate = await deps.rateLimiter.consume(
+          `webauthn:options:${payload.email}:${ipAddress ?? "unknown"}`,
+          deps.env.RATE_LIMIT_LOGIN_PER_MIN,
+          60,
+        );
+        if (!rate.allowed) {
+          throw new ApiError(
+            429,
+            "rate_limited",
+            "Too many authentication attempts",
+          );
+        }
+
+        const user = await deps.authService.getUserByEmail(payload.email);
+        return deps.webauthnService.generateAuthenticationOptions(
+          user?.id ?? randomUUID(),
+        );
+      },
+    }),
+  );
+
+  app.post(
+    "/v1/mfa/webauthn/authenticate/verify",
+    publicEndpointAdapter({
+      schema: webauthnAuthenticationVerifySchema,
+      handler: async (c, payload) => {
+        const ipAddress = getIpAddress(c.req.header("x-forwarded-for"));
+        const rate = await deps.rateLimiter.consume(
+          `webauthn:verify:${payload.email}:${ipAddress ?? "unknown"}`,
+          deps.env.RATE_LIMIT_LOGIN_PER_MIN,
+          60,
+        );
+        if (!rate.allowed) {
+          throw new ApiError(
+            429,
+            "rate_limited",
+            "Too many authentication attempts",
+          );
+        }
+
+        const user = await deps.authService.getUserByEmail(payload.email);
+        if (!user) {
+          throw new ApiError(
+            401,
+            "invalid_credentials",
+            "Invalid authentication request",
+          );
+        }
+
+        const userAgent = c.req.header("user-agent") ?? null;
+
+        try {
+          await deps.webauthnService.verifyAuthenticationResponse(
+            user.id,
+            payload.response,
+          );
+        } catch (_error: unknown) {
+          throw new ApiError(
+            401,
+            "invalid_credentials",
+            "Invalid authentication request",
+          );
+        }
+
+        // WebAuthn authentication successful, now create a session
+        const tokens = await deps.authService.createSessionForUser(
+          user.id,
+          ipAddress,
+          userAgent,
+        );
+
+        return {
+          status: "ok",
+          userId: user.id,
+          mfaEnabled: true,
+          ...tokens,
+        };
+      },
+    }),
+  );
 
   app.post(
     "/v1/signup",
@@ -113,6 +203,8 @@ export const buildPublicRoutes = (deps: AppDependencies) => {
         const result = await deps.authService.login({
           email: payload.email,
           password: payload.password,
+          ...(payload.mfaCode ? { mfaCode: payload.mfaCode } : {}),
+          ...(payload.mfaFactorId ? { mfaFactorId: payload.mfaFactorId } : {}),
           ipAddress,
           userAgent,
         });
@@ -146,6 +238,8 @@ export const buildPublicRoutes = (deps: AppDependencies) => {
         const result = await deps.authService.loginWithGoogle({
           idToken: payload.idToken,
           clientId: googleConfig.clientId,
+          ...(payload.mfaCode ? { mfaCode: payload.mfaCode } : {}),
+          ...(payload.mfaFactorId ? { mfaFactorId: payload.mfaFactorId } : {}),
           ipAddress,
           userAgent,
         });
@@ -183,7 +277,21 @@ export const buildPublicRoutes = (deps: AppDependencies) => {
     "/v1/email/verify/request",
     publicEndpointAdapter({
       schema: emailVerificationRequestSchema,
-      handler: async (_c, payload) => {
+      handler: async (c, payload) => {
+        const ipAddress = getIpAddress(c.req.header("x-forwarded-for"));
+        const rate = await deps.rateLimiter.consume(
+          `email-verify:${payload.email}:${ipAddress ?? "unknown"}`,
+          deps.env.RATE_LIMIT_LOGIN_PER_MIN,
+          60,
+        );
+        if (!rate.allowed) {
+          throw new ApiError(
+            429,
+            "rate_limited",
+            "Too many verification attempts",
+          );
+        }
+
         const result = await deps.authService.requestEmailVerification(
           payload.email,
         );
@@ -226,7 +334,21 @@ export const buildPublicRoutes = (deps: AppDependencies) => {
     "/v1/password/reset/request",
     publicEndpointAdapter({
       schema: passwordResetRequestSchema,
-      handler: async (_c, payload) => {
+      handler: async (c, payload) => {
+        const ipAddress = getIpAddress(c.req.header("x-forwarded-for"));
+        const rate = await deps.rateLimiter.consume(
+          `password-reset:${payload.email}:${ipAddress ?? "unknown"}`,
+          deps.env.RATE_LIMIT_LOGIN_PER_MIN,
+          60,
+        );
+        if (!rate.allowed) {
+          throw new ApiError(
+            429,
+            "rate_limited",
+            "Too many password reset attempts",
+          );
+        }
+
         const result = await deps.authService.requestPasswordReset(
           payload.email,
         );

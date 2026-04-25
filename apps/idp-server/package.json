@@ -11,7 +11,8 @@
     "retention:dry-run": "tsx src/jobs/run-data-retention.ts --dry-run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "lint": "eslint src --ext .ts"
+    "lint": "eslint src --ext .ts",
+    "db:seed": "tsx src/seed.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
@@ -27,6 +28,7 @@
     "@opentelemetry/resources": "^2.7.0",
     "@opentelemetry/sdk-node": "^0.215.0",
     "@opentelemetry/semantic-conventions": "^1.40.0",
+    "argon2": "^0.43.0",
     "drizzle-orm": "^0.44.0",
     "hono": "^4.7.7",
     "oidc-provider": "^9.5.1",

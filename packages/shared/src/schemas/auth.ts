@@ -15,6 +15,11 @@ export const signupRequestSchema = z.object({
 export const loginRequestSchema = z.object({
   email: normalizedEmail,
   password: z.string().min(1).max(128),
+  mfaCode: z
+    .string()
+    .regex(/^\d{6}$/)
+    .optional(),
+  mfaFactorId: z.string().uuid().optional(),
 });
 
 export const refreshRequestSchema = z.object({
@@ -75,6 +80,11 @@ export const passwordResetConfirmRequestSchema = z.object({
 
 export const googleLoginRequestSchema = z.object({
   idToken: z.string().min(1),
+  mfaCode: z
+    .string()
+    .regex(/^\d{6}$/)
+    .optional(),
+  mfaFactorId: z.string().uuid().optional(),
 });
 
 export const googleLinkRequestSchema = z.object({

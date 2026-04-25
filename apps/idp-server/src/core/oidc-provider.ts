@@ -22,18 +22,22 @@ export const createOidcProvider = (
       required: () => true,
     },
     features: {
-      devInteractions: { enabled: true },
+      devInteractions: { enabled: env.NODE_ENV !== "production" },
       introspection: { enabled: true },
       revocation: { enabled: true },
     },
     findAccount: async (_ctx, sub) => {
+      const me = await authService.getMe(sub).catch(() => null);
+      if (!me) {
+        return undefined;
+      }
       const snapshot = await authService.getAuthorizationSnapshot(sub);
       return {
         accountId: sub,
         claims: async () => ({
           sub,
-          email: `${sub}@example.com`,
-          email_verified: true,
+          email: me.email,
+          email_verified: me.emailVerified,
           permissions: snapshot.permissions,
           entitlements: snapshot.entitlements,
         }),

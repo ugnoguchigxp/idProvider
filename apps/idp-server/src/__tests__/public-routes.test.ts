@@ -26,6 +26,9 @@ describe("Public Routes (via buildApp)", () => {
       authService: {
         signup: vi.fn(),
         login: vi.fn(),
+        loginWithGoogle: vi.fn(),
+        getUserByEmail: vi.fn(),
+        createSessionForUser: vi.fn(),
         refresh: vi.fn(),
         requestPasswordReset: vi.fn(),
         confirmPasswordReset: vi.fn(),
@@ -34,6 +37,15 @@ describe("Public Routes (via buildApp)", () => {
         introspectToken: vi.fn(),
         requestEmailVerification: vi.fn(),
         confirmEmailVerification: vi.fn(),
+      },
+      webauthnService: {
+        generateAuthenticationOptions: vi.fn().mockResolvedValue({
+          challenge: "challenge",
+          rpId: "localhost",
+        }),
+        verifyAuthenticationResponse: vi.fn().mockResolvedValue({
+          success: true,
+        }),
       },
       rateLimiter: {
         consume: vi.fn().mockResolvedValue({ allowed: true, remaining: 10 }),
@@ -109,6 +121,50 @@ describe("Public Routes (via buildApp)", () => {
     });
   });
 
+  it("POST /v1/login/google passes MFA fields through", async () => {
+    deps.authService.loginWithGoogle.mockResolvedValue({
+      userId: "u-1",
+      mfaEnabled: true,
+      accessToken: "at",
+    });
+    const res = await app.request("/v1/login/google", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        idToken: "google-token",
+        mfaCode: "123456",
+        mfaFactorId: crypto.randomUUID(),
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(deps.authService.loginWithGoogle).toHaveBeenCalledWith(
+      expect.objectContaining({ mfaCode: "123456" }),
+    );
+  });
+
+  it("POST /v1/mfa/webauthn/authenticate/options does not leak missing user", async () => {
+    deps.authService.getUserByEmail.mockResolvedValue(null);
+    const res = await app.request("/v1/mfa/webauthn/authenticate/options", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "unknown@example.com" }),
+    });
+    expect(res.status).toBe(200);
+    expect(
+      deps.webauthnService.generateAuthenticationOptions,
+    ).toHaveBeenCalled();
+  });
+
+  it("POST /v1/mfa/webauthn/authenticate/verify returns 401 for missing user", async () => {
+    deps.authService.getUserByEmail.mockResolvedValue(null);
+    const res = await app.request("/v1/mfa/webauthn/authenticate/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "unknown@example.com", response: {} }),
+    });
+    expect(res.status).toBe(401);
+  });
+
   it("POST /oauth/token works", async () => {
     deps.authService.refresh.mockResolvedValue({
       accessToken: "at",
@@ -139,6 +195,19 @@ describe("Public Routes (via buildApp)", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.token).toBe("p-token");
+  });
+
+  it("POST /v1/password/reset/request throws 429 when rate limited", async () => {
+    deps.rateLimiter.consume.mockResolvedValueOnce({
+      allowed: false,
+      remaining: 0,
+    });
+    const res = await app.request("/v1/password/reset/request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "test@example.com" }),
+    });
+    expect(res.status).toBe(429);
   });
 
   it("POST /v1/password/reset/confirm works", async () => {
@@ -213,6 +282,19 @@ describe("Public Routes (via buildApp)", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.token).toBe("v-token");
+  });
+
+  it("POST /v1/email/verify/request throws 429 when rate limited", async () => {
+    deps.rateLimiter.consume.mockResolvedValueOnce({
+      allowed: false,
+      remaining: 0,
+    });
+    const res = await app.request("/v1/email/verify/request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "test@example.com" }),
+    });
+    expect(res.status).toBe(429);
   });
 
   it("POST /v1/email/verify/request hide token in production", async () => {

@@ -9,6 +9,7 @@ import {
   mfaVerifyRequestSchema,
   passwordChangeRequestSchema,
   revokeSessionRequestSchema,
+  webauthnRegistrationVerifySchema,
 } from "@idp/shared";
 import { Hono } from "hono";
 import { authenticatedEndpointAdapter } from "../adapters/authenticated-endpoint-adapter.js";
@@ -16,6 +17,40 @@ import type { AppDependencies } from "../core/app-context.js";
 
 export const buildAuthenticatedRoutes = (deps: AppDependencies) => {
   const app = new Hono();
+
+  app.get(
+    "/v1/mfa/webauthn/register/options",
+    authenticatedEndpointAdapter({
+      schema: emptyRequestSchema,
+      authenticate: deps.authService.authenticateAccessToken.bind(
+        deps.authService,
+      ),
+      handler: async (_c, _payload, auth) => {
+        const user = await deps.authService.getMe(auth.userId);
+        return deps.webauthnService.generateRegistrationOptions(
+          auth.userId,
+          user.email,
+        );
+      },
+    }),
+  );
+
+  app.post(
+    "/v1/mfa/webauthn/register/verify",
+    authenticatedEndpointAdapter({
+      schema: webauthnRegistrationVerifySchema,
+      authenticate: deps.authService.authenticateAccessToken.bind(
+        deps.authService,
+      ),
+      handler: async (_c, payload, auth) => {
+        return deps.webauthnService.verifyRegistrationResponse(
+          auth.userId,
+          payload.response,
+          payload.name,
+        );
+      },
+    }),
+  );
 
   app.get(
     "/v1/me",

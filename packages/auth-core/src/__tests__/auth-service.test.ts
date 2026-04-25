@@ -113,6 +113,46 @@ describe("AuthService", () => {
       expect(result.accessToken).toBeDefined();
     });
 
+    it("throws 401 if MFA is enabled and code is missing", async () => {
+      db.limit.mockResolvedValueOnce([
+        { userId: "user-1", passwordHash: "hash", emailVerified: true },
+      ]);
+      db.limit.mockResolvedValueOnce([
+        { id: "factor-1", type: "totp", secret: "secret" },
+      ]);
+
+      await expect(
+        service.login({
+          email: "test@example.com",
+          password: "password123",
+          ipAddress: "127.0.0.1",
+          userAgent: "ua",
+        }),
+      ).rejects.toThrow(ApiError);
+    });
+
+    it("logs in when MFA code is valid", async () => {
+      db.limit.mockResolvedValueOnce([
+        { userId: "user-1", passwordHash: "hash", emailVerified: true },
+      ]);
+      db.limit.mockResolvedValueOnce([
+        { id: "factor-1", type: "totp", secret: "secret" },
+      ]);
+
+      const result = await service.login({
+        email: "test@example.com",
+        password: "password123",
+        mfaCode: "123456",
+        mfaFactorId: "factor-1",
+        ipAddress: "127.0.0.1",
+        userAgent: "ua",
+      });
+
+      expect(result.userId).toBe("user-1");
+      expect(result.mfaEnabled).toBe(true);
+      expect(result.accessToken).toBeDefined();
+    });
+
     it("throws 401 if user not found", async () => {
       db.limit.mockResolvedValueOnce([]); // User not found
 
@@ -320,6 +360,7 @@ describe("AuthService", () => {
       db.limit.mockResolvedValueOnce([{ userId: "user-1" }]);
       const result = await service.requestPasswordReset("test@example.com");
       expect(result.accepted).toBe(true);
+      expect(result.token).toBeDefined();
       expect(db.insert).toHaveBeenCalled();
     });
 
@@ -492,6 +533,7 @@ describe("AuthService", () => {
     it("loginWithGoogle logs in existing linked user", async () => {
       db.limit.mockResolvedValueOnce([{ userId: "user-1" }]); // existing mapping
       db.limit.mockResolvedValueOnce([]); // MFA factors check
+      db.limit.mockResolvedValueOnce([]); // local password check
       db.returning.mockResolvedValueOnce([{ id: "sess-1" }]); // Session creation
 
       const result = await service.loginWithGoogle({
@@ -504,10 +546,66 @@ describe("AuthService", () => {
       expect(result.userId).toBe("user-1");
     });
 
+    it("loginWithGoogle requires local MFA for linked password accounts", async () => {
+      db.limit.mockResolvedValueOnce([{ userId: "user-1" }]); // existing mapping
+      db.limit.mockResolvedValueOnce([
+        { id: "factor-1", type: "totp", secret: "secret" },
+      ]);
+      db.limit.mockResolvedValueOnce([{ userId: "user-1" }]); // local password
+
+      await expect(
+        service.loginWithGoogle({
+          idToken: "valid-token",
+          clientId: "client-id",
+          ipAddress: "1.1.1.1",
+          userAgent: "ua",
+        }),
+      ).rejects.toThrow(ApiError);
+    });
+
+    it("loginWithGoogle accepts local MFA for linked password accounts", async () => {
+      db.limit.mockResolvedValueOnce([{ userId: "user-1" }]); // existing mapping
+      db.limit.mockResolvedValueOnce([
+        { id: "factor-1", type: "totp", secret: "secret" },
+      ]);
+      db.limit.mockResolvedValueOnce([{ userId: "user-1" }]); // local password
+
+      const result = await service.loginWithGoogle({
+        idToken: "valid-token",
+        clientId: "client-id",
+        mfaCode: "123456",
+        mfaFactorId: "factor-1",
+        ipAddress: "1.1.1.1",
+        userAgent: "ua",
+      });
+
+      expect(result.userId).toBe("user-1");
+      expect(result.mfaEnabled).toBe(true);
+    });
+
+    it("loginWithGoogle does not require local MFA for social-only accounts", async () => {
+      db.limit.mockResolvedValueOnce([{ userId: "user-1" }]); // existing mapping
+      db.limit.mockResolvedValueOnce([
+        { id: "factor-1", type: "totp", secret: "secret" },
+      ]);
+      db.limit.mockResolvedValueOnce([]); // no local password
+
+      const result = await service.loginWithGoogle({
+        idToken: "valid-token",
+        clientId: "client-id",
+        ipAddress: "1.1.1.1",
+        userAgent: "ua",
+      });
+
+      expect(result.userId).toBe("user-1");
+      expect(result.mfaEnabled).toBe(true);
+    });
+
     it("loginWithGoogle auto-links and logs in if email matches", async () => {
       db.limit.mockResolvedValueOnce([]); // no existing mapping
       db.limit.mockResolvedValueOnce([{ userId: "user-1" }]); // existing user by email
       db.limit.mockResolvedValueOnce([]); // MFA factors check
+      db.limit.mockResolvedValueOnce([]); // local password check
       db.returning.mockResolvedValueOnce([{ id: "sess-1" }]); // Session creation
 
       const result = await service.loginWithGoogle({
@@ -526,6 +624,7 @@ describe("AuthService", () => {
       db.limit.mockResolvedValueOnce([]); // no existing user by email
       db.returning.mockResolvedValueOnce([{ id: "new-user-1" }]); // user creation
       db.limit.mockResolvedValueOnce([]); // MFA factors check
+      db.limit.mockResolvedValueOnce([]); // local password check
       db.returning.mockResolvedValueOnce([{ id: "sess-1" }]); // Session creation
 
       const result = await service.loginWithGoogle({

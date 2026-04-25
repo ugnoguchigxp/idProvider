@@ -70,6 +70,9 @@ const envSchema = z
       .default("http://localhost:4318/v1/traces"),
     GOOGLE_CLIENT_ID: z.string().min(1),
     GOOGLE_CLIENT_SECRET: z.string().min(1),
+    WEBAUTHN_RP_NAME: z.string().min(1).default("gxp-idProvider"),
+    WEBAUTHN_RP_ID: z.string().min(1).default("localhost"),
+    WEBAUTHN_ORIGIN: z.string().url().default("http://localhost:3000"),
   })
   .superRefine((env, ctx) => {
     if (

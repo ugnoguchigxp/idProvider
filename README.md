@@ -31,8 +31,9 @@ Hono ベースの API と `oidc-provider` を組み合わせ、OIDC/OAuth2、認
   - セッション一覧 / 個別失効 / 全失効
 - 認証強化
   - Argon2id パスワードハッシュ
-  - MFA (TOTP)
-  - レート制限 (signup / login)
+  - ローカルアカウント向け MFA (TOTP)
+  - パスワードレスログイン向け Passkeys (WebAuthn / user verification required)
+  - レート制限 (signup / login / WebAuthn / email verification / password reset)
 - 認可
   - `authorization/check` (RBAC)
   - `entitlements/check` (attribute/quantity 型 entitlement)
@@ -43,8 +44,11 @@ Hono ベースの API と `oidc-provider` を組み合わせ、OIDC/OAuth2、認
   - Token refresh / Introspection / Revocation
   - JWKS ローテーション
 - 外部 IdP 連携
+  - Google ID Token によるログイン / 自動サインアップ
   - Google identity の link / unlink
   - 管理設定で Google 連携の有効/無効を切り替え
+  - ソーシャル専用アカウントの MFA は外部 IdP 側に委譲
+  - ローカルパスワードを持つアカウントに Google を紐付けた場合は、この IdP 側の MFA を維持
 - 管理 UI / 設定管理
   - `/admin` (Bearer token 必須)
   - `system_configs` テーブルによる動的設定
@@ -94,6 +98,7 @@ pnpm install
 cp .env.example .env
 pnpm stack:up
 pnpm db:migrate
+pnpm db:seed
 pnpm dev
 ```
 
@@ -120,6 +125,8 @@ pnpm dev
   - `MFA_ISSUER`
 - JWKS
   - `JWKS_ROTATION_INTERVAL_HOURS`, `JWKS_GRACE_PERIOD_HOURS`
+- WebAuthn (Passkeys)
+  - `WEBAUTHN_RP_NAME`, `WEBAUTHN_RP_ID`, `WEBAUTHN_ORIGIN`
 - データ保持
   - `RETENTION_AUDIT_LOG_ANONYMIZE_DAYS`, `RETENTION_AUDIT_LOG_DELETE_DAYS`
   - `RETENTION_SECURITY_EVENT_ANONYMIZE_DAYS`, `RETENTION_SECURITY_EVENT_DELETE_DAYS`
@@ -144,6 +151,7 @@ pnpm dev
 - Public
   - `POST /v1/signup`
   - `POST /v1/login`
+  - `POST /v1/login/google`
   - `POST /v1/token/refresh`
   - `POST /oauth/token`
   - `POST /oauth/introspection`
@@ -152,12 +160,16 @@ pnpm dev
   - `POST /v1/email/verify/confirm`
   - `POST /v1/password/reset/request`
   - `POST /v1/password/reset/confirm`
+  - `POST /v1/mfa/webauthn/authenticate/options`
+  - `POST /v1/mfa/webauthn/authenticate/verify`
   - `GET /healthz`, `GET /readyz`
 - Authenticated
   - `GET /v1/me`
   - `POST /v1/logout`
   - `POST /v1/mfa/enroll`
   - `POST /v1/mfa/verify`
+  - `GET /v1/mfa/webauthn/register/options`
+  - `POST /v1/mfa/webauthn/register/verify`
   - `POST /v1/password/change`
   - `POST /v1/authorization/check`
   - `POST /v1/entitlements/check`

@@ -365,6 +365,24 @@ export class AuthService {
     };
   }
 
+  async getUserByEmail(email: string) {
+    const result = await this.db
+      .select({ id: users.id })
+      .from(userEmails)
+      .innerJoin(users, eq(userEmails.userId, users.id))
+      .where(eq(userEmails.email, email))
+      .limit(1);
+    return result[0] ?? null;
+  }
+
+  async createSessionForUser(
+    userId: string,
+    ipAddress: string | null,
+    userAgent: string | null,
+  ) {
+    return this.createSession(userId, ipAddress, userAgent);
+  }
+
   private async createSession(
     userId: string,
     ipAddress: string | null,
@@ -399,6 +417,55 @@ export class AuthService {
       refreshExpiresAt: refreshExpiresAt.toISOString(),
       tokenClaims,
     };
+  }
+
+  private async hasLocalPassword(
+    userId: string,
+    db: DbTransaction | DbClient = this.db,
+  ): Promise<boolean> {
+    const rows = await db
+      .select({ userId: userPasswords.userId })
+      .from(userPasswords)
+      .where(eq(userPasswords.userId, userId))
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  private assertValidTotpMfa(input: {
+    factors: Array<{ id: string; type: string; secret: string | null }>;
+    code: string | undefined;
+    factorId: string | undefined;
+  }): { factorId: string } {
+    const totpFactors = input.factors.filter(
+      (factor) => factor.type === "totp" && typeof factor.secret === "string",
+    );
+
+    if (!input.code) {
+      throw new ApiError(
+        401,
+        "mfa_required",
+        "MFA verification is required before login",
+      );
+    }
+
+    const selectedFactor = input.factorId
+      ? totpFactors.find((factor) => factor.id === input.factorId)
+      : totpFactors[0];
+
+    if (!selectedFactor?.secret) {
+      throw new ApiError(
+        401,
+        "webauthn_mfa_required",
+        "WebAuthn MFA verification is required before login",
+      );
+    }
+
+    const validCode = authenticator.check(input.code, selectedFactor.secret);
+    if (!validCode) {
+      throw new ApiError(401, "invalid_mfa_code", "Invalid MFA code");
+    }
+
+    return { factorId: selectedFactor.id };
   }
 
   async signup(input: {
@@ -497,6 +564,8 @@ export class AuthService {
   async login(input: {
     email: string;
     password: string;
+    mfaCode?: string;
+    mfaFactorId?: string;
     ipAddress: string | null;
     userAgent: string | null;
   }) {
@@ -556,15 +625,29 @@ export class AuthService {
       );
     }
 
-    const factor = await this.db
-      .select({ id: mfaFactors.id })
+    const factors = await this.db
+      .select({
+        id: mfaFactors.id,
+        type: mfaFactors.type,
+        secret: mfaFactors.secret,
+      })
       .from(mfaFactors)
       .where(
         and(eq(mfaFactors.userId, row.userId), eq(mfaFactors.enabled, true)),
       )
-      .limit(1);
+      .limit(20);
 
-    const mfaEnabled = factor.length > 0;
+    const mfaEnabled = factors.length > 0;
+    if (mfaEnabled) {
+      const verified = this.assertValidTotpMfa({
+        factors,
+        code: input.mfaCode,
+        factorId: input.mfaFactorId,
+      });
+
+      await this.writeSecurityEvent("mfa.login_verified", row.userId, verified);
+    }
+
     const tokens = await this.createSession(
       row.userId,
       input.ipAddress,
@@ -844,6 +927,7 @@ export class AuthService {
     // In production this token must be delivered through a trusted side channel (email/SMS).
     return {
       accepted: true,
+      token: resetToken,
     };
   }
 
@@ -1226,6 +1310,10 @@ export class AuthService {
       throw new ApiError(404, "mfa_factor_not_found", "MFA factor not found");
     }
 
+    if (!factor.secret) {
+      throw new ApiError(400, "invalid_mfa_factor", "MFA factor has no secret");
+    }
+
     const valid = authenticator.check(code, factor.secret);
     if (!valid) {
       throw new ApiError(400, "invalid_mfa_code", "MFA code is invalid");
@@ -1248,12 +1336,22 @@ export class AuthService {
     provider: string;
     providerSubject: string;
     email: string;
+    mfaCode: string | undefined;
+    mfaFactorId: string | undefined;
     ipAddress: string | null;
     userAgent: string | null;
     db: DbTransaction | DbClient;
   }) {
-    const { provider, providerSubject, email, ipAddress, userAgent, db } =
-      input;
+    const {
+      provider,
+      providerSubject,
+      email,
+      mfaCode,
+      mfaFactorId,
+      ipAddress,
+      userAgent,
+      db,
+    } = input;
 
     // 1. Check if this social identity is already linked
     const existingIdentity = await db
@@ -1329,13 +1427,33 @@ export class AuthService {
       }
     }
 
-    const factor = await db
-      .select({ id: mfaFactors.id })
+    const factors = await db
+      .select({
+        id: mfaFactors.id,
+        type: mfaFactors.type,
+        secret: mfaFactors.secret,
+      })
       .from(mfaFactors)
       .where(and(eq(mfaFactors.userId, userId), eq(mfaFactors.enabled, true)))
-      .limit(1);
+      .limit(20);
 
-    const mfaEnabled = factor.length > 0;
+    const mfaEnabled = factors.length > 0;
+    const localPasswordAccount = await this.hasLocalPassword(userId, db);
+    if (localPasswordAccount && mfaEnabled) {
+      const verified = this.assertValidTotpMfa({
+        factors,
+        code: mfaCode,
+        factorId: mfaFactorId,
+      });
+
+      await this.writeSecurityEvent(
+        `mfa.${provider}.login_verified`,
+        userId,
+        verified,
+        db,
+      );
+    }
+
     const tokens = await this.createSession(userId, ipAddress, userAgent, db);
 
     await this.writeSecurityEvent(
@@ -1355,6 +1473,8 @@ export class AuthService {
   async loginWithGoogle(input: {
     idToken: string;
     clientId: string;
+    mfaCode?: string;
+    mfaFactorId?: string;
     ipAddress: string | null;
     userAgent: string | null;
   }) {
@@ -1388,6 +1508,8 @@ export class AuthService {
         provider: "google",
         providerSubject: payload.sub,
         email,
+        mfaCode: input.mfaCode,
+        mfaFactorId: input.mfaFactorId,
         ipAddress: input.ipAddress,
         userAgent: input.userAgent,
         db: tx,

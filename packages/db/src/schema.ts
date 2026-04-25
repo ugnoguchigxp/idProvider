@@ -48,18 +48,26 @@ export const userPasswords = pgTable("user_passwords", {
     .defaultNow(),
 });
 
-export const mfaFactors = pgTable("mfa_factors", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  type: varchar("type", { length: 32 }).notNull().default("totp"),
-  secret: text("secret").notNull(),
-  enabled: boolean("enabled").notNull().default(false),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
+export const mfaFactors = pgTable(
+  "mfa_factors",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: varchar("type", { length: 32 }).notNull().default("totp"),
+    name: varchar("name", { length: 128 }),
+    secret: text("secret"),
+    webauthnData: jsonb("webauthn_data"),
+    enabled: boolean("enabled").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    userIdIdx: index("mfa_factors_user_id_idx").on(table.userId),
+  }),
+);
 
 export const externalIdentities = pgTable(
   "external_identities",
