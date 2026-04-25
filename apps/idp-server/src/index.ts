@@ -1,7 +1,6 @@
 import "./tracing.js";
 import { serve } from "@hono/node-server";
 import {
-  AuthService,
   ConfigService,
   createRedisClient,
   KeyStoreService,
@@ -14,6 +13,19 @@ import { createLogger } from "./core/logger.js";
 import { createOidcProvider } from "./core/oidc-provider.js";
 import { RateLimiter } from "./core/rate-limiter.js";
 import { createSecurityNotifier } from "./core/security-notifier.js";
+import { AuditRepository } from "./modules/audit/audit.repository.js";
+import { AuthRepository } from "./modules/auth/auth.repository.js";
+import { AuthService } from "./modules/auth/auth.service.js";
+import { VerificationRepository } from "./modules/auth/verification.repository.js";
+import { MfaRepository } from "./modules/mfa/mfa.repository.js";
+import { MfaService } from "./modules/mfa/mfa.service.js";
+import { RBACRepository } from "./modules/rbac/rbac.repository.js";
+import { RBACService } from "./modules/rbac/rbac.service.js";
+import { SessionRepository } from "./modules/sessions/session.repository.js";
+import { SessionService } from "./modules/sessions/sessions.service.js";
+import { IdentityRepository } from "./modules/users/identity.repository.js";
+import { UserRepository } from "./modules/users/user.repository.js";
+import { UserService } from "./modules/users/users.service.js";
 
 const bootstrap = async () => {
   const env = loadEnv(process.env);
@@ -23,25 +35,6 @@ const bootstrap = async () => {
   const redis = createRedisClient(env.REDIS_URL);
   const onSecurityEvent = createSecurityNotifier(configService, logger);
 
-  const webauthnService = new WebAuthnService(db, redis, {
-    rpName: env.WEBAUTHN_RP_NAME,
-    rpID: env.WEBAUTHN_RP_ID,
-    origin: env.WEBAUTHN_ORIGIN,
-    onSecurityEvent,
-  });
-
-  const authService = new AuthService(db, {
-    accessTokenTtlSeconds: env.ACCESS_TOKEN_TTL_SECONDS,
-    refreshTokenTtlSeconds: env.REFRESH_TOKEN_TTL_SECONDS,
-    argon2: {
-      memoryCost: env.ARGON2_MEMORY_COST,
-      timeCost: env.ARGON2_TIME_COST,
-      parallelism: env.ARGON2_PARALLELISM,
-    },
-    mfaIssuer: env.MFA_ISSUER,
-    onSecurityEvent,
-  });
-
   const keyStore = new KeyStoreService(db, {
     rotationIntervalHours: env.JWKS_ROTATION_INTERVAL_HOURS,
     gracePeriodHours: env.JWKS_GRACE_PERIOD_HOURS,
@@ -49,11 +42,62 @@ const bootstrap = async () => {
 
   const rateLimiter = new RateLimiter(redis);
 
+  // Repositories
+  const auditRepository = new AuditRepository(db);
+  const authRepository = new AuthRepository(db);
+  const verificationRepository = new VerificationRepository(db);
+  const userRepository = new UserRepository(db);
+  const identityRepository = new IdentityRepository(db);
+  const sessionRepository = new SessionRepository(db);
+  const mfaRepository = new MfaRepository(db);
+  const rbacRepository = new RBACRepository(db);
+
+  // Services
+  const rbacService = new RBACService(rbacRepository);
+
+  const authService = new AuthService({
+    authRepository,
+    verificationRepository,
+    userRepository,
+    sessionRepository,
+    rbacService,
+    auditRepository,
+    configService,
+    env,
+    logger,
+  });
+
+  const userService = new UserService({
+    userRepository,
+    identityRepository,
+    auditRepository,
+    logger,
+  });
+
+  const sessionService = new SessionService({
+    sessionRepository,
+  });
+
+  const mfaService = new MfaService({
+    mfaRepository,
+  });
+
+  const webauthnService = new WebAuthnService(db, redis, {
+    rpName: env.WEBAUTHN_RP_NAME,
+    rpID: env.WEBAUTHN_RP_ID,
+    origin: env.WEBAUTHN_ORIGIN,
+    onSecurityEvent,
+  });
+
   await keyStore.rotateIfDue();
 
   const app = buildApp({
     env,
     authService,
+    userService,
+    sessionService,
+    mfaService,
+    rbacService,
     webauthnService,
     configService,
     keyStore,
@@ -62,82 +106,32 @@ const bootstrap = async () => {
     rateLimiter,
   });
 
-  const apiServer = serve(
-    {
-      fetch: app.fetch,
-      port: env.PORT,
-    },
-    (info) => {
-      logger.info(
-        { event: "server.started", port: info.port },
-        "idp-server started",
-      );
-    },
-  );
+  const apiServer = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
+    logger.info(
+      { event: "server.started", port: info.port },
+      "idp-server started",
+    );
+  });
 
-  let oidcProvider = createOidcProvider(
+  // OIDC Provider setup...
+  const oidcProvider = createOidcProvider(
     env,
     await keyStore.getActivePrivateJwks(),
-    authService,
+    // biome-ignore lint/suspicious/noExplicitAny: Required for oidc-provider compatibility
+    authService as any,
   );
-  let oidcServer = oidcProvider.listen(env.OIDC_PORT, () => {
+  const oidcServer = oidcProvider.listen(env.OIDC_PORT, () => {
     logger.info(
       { event: "oidc.started", port: env.OIDC_PORT, issuer: env.OIDC_ISSUER },
       "oidc-provider started",
     );
   });
 
-  const rotationTimer = setInterval(
-    () => {
-      void (async () => {
-        const rotation = await keyStore.rotateIfDue();
-        if (!rotation.rotated) {
-          return;
-        }
-
-        const nextProvider = createOidcProvider(
-          env,
-          await keyStore.getActivePrivateJwks(),
-          authService,
-        );
-        await new Promise<void>((resolve, reject) => {
-          oidcServer.close((error?: Error) => {
-            if (error) {
-              reject(error);
-              return;
-            }
-            resolve();
-          });
-        });
-
-        oidcProvider = nextProvider;
-        oidcServer = oidcProvider.listen(env.OIDC_PORT, () => {
-          logger.info(
-            {
-              event: "oidc.restarted_after_jwks_rotation",
-              activeKid: rotation.activeKid,
-              previousKid: rotation.previousKid,
-            },
-            "oidc-provider restarted after jwks rotation",
-          );
-        });
-      })().catch((error: unknown) => {
-        logger.error(
-          { event: "jwks.rotate_failed", error },
-          "jwks rotation failed",
-        );
-      });
-    },
-    60 * 60 * 1000,
-  );
-  rotationTimer.unref?.();
-
   const shutdown = async (signal: string) => {
     logger.info(
       { event: "server.shutdown", signal },
       "shutting down idp-server",
     );
-    clearInterval(rotationTimer);
     apiServer.close();
     oidcServer.close();
     await redis.quit();
@@ -145,13 +139,8 @@ const bootstrap = async () => {
     process.exit(0);
   };
 
-  process.on("SIGINT", () => {
-    void shutdown("SIGINT");
-  });
-
-  process.on("SIGTERM", () => {
-    void shutdown("SIGTERM");
-  });
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
 };
 
 void bootstrap().catch((error: unknown) => {

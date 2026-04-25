@@ -50,7 +50,8 @@ Hono ベースの API と `oidc-provider` を組み合わせ、OIDC/OAuth2、認
   - ソーシャル専用アカウントの MFA は外部 IdP 側に委譲
   - ローカルパスワードを持つアカウントに Google を紐付けた場合は、この IdP 側の MFA を維持
 - 管理 UI / 設定管理
-  - `/admin` (Bearer token 必須)
+  - React ベースの `apps/admin-ui`
+  - `/v1/admin/*` API (cookie または Bearer token)
   - `system_configs` テーブルによる動的設定
   - ソーシャルログイン、通知、メールテンプレート管理
 - 監査・セキュリティ
@@ -66,7 +67,8 @@ Hono ベースの API と `oidc-provider` を組み合わせ、OIDC/OAuth2、認
 ```text
 .
 ├── apps/
-│   └── idp-server/                 # API サーバー + OIDC 起動
+│   ├── idp-server/                 # API サーバー + OIDC 起動
+│   └── admin-ui/                   # React 管理画面
 ├── packages/
 │   ├── auth-core/                  # 認証・認可ドメインロジック
 │   ├── db/                         # Drizzle schema / DB client
@@ -106,6 +108,7 @@ pnpm dev
 
 - API: `http://localhost:3000`
 - OIDC issuer: `http://localhost:3001`
+- Admin UI: `http://localhost:5173` (`pnpm dev:admin` 実行時)
 
 ## 環境変数
 
@@ -179,7 +182,6 @@ pnpm dev
   - `POST /v1/identities/google/link`
   - `POST /v1/identities/google/unlink`
 - Admin
-  - `GET /admin`
   - `GET /v1/admin/configs`
   - `PUT /v1/admin/configs/social-login/google`
   - `PUT /v1/admin/configs/notifications`
@@ -187,10 +189,11 @@ pnpm dev
 
 ## 管理 UI の使い方
 
-1. 管理者権限を持つユーザーのアクセストークンを用意
-2. `Authorization: Bearer <token>` ヘッダー付きで `GET /admin` を開く
-3. 画面上の Token 入力にトークンを設定
-4. 設定変更を保存すると `system_configs` に反映
+1. API サーバーを起動 (`pnpm dev`)
+2. 管理 UI を起動 (`pnpm dev:admin`)
+3. 管理者ユーザーの認証後、`idp_access_token` cookie で `/v1/admin/*` を操作
+4. 更新系 (`PUT/POST`) は `x-csrf-token` ヘッダーに `idp_csrf_token` cookie 値を設定
+5. 設定変更を保存すると `system_configs` に反映
 
 ## データ保持バッチ
 
@@ -216,6 +219,7 @@ pnpm retention:run
 ## 開発コマンド
 
 - `pnpm dev`: idp-server 開発起動
+- `pnpm dev:admin`: React 管理UI 開発起動
 - `pnpm build`: 全ワークスペース build
 - `pnpm typecheck`: 全ワークスペース型チェック
 - `pnpm test`: 全ワークスペーステスト

@@ -1,0 +1,83 @@
+:root {
+  font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", sans-serif;
+  color: #0f172a;
+  background: #f8fafc;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.container {
+  max-width: 760px;
+  margin: 40px auto;
+  padding: 0 16px;
+}
+
+.pageHeader h1 {
+  margin: 0;
+  font-size: 28px;
+}
+
+.pageHeader p {
+  margin-top: 8px;
+  color: #475569;
+}
+
+.card {
+  margin-top: 20px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 20px;
+}
+
+.form {
+  display: grid;
+  gap: 12px;
+}
+
+.checkboxRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field input {
+  height: 36px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 10px;
+}
+
+button {
+  height: 38px;
+  border: 0;
+  border-radius: 8px;
+  background: #0ea5e9;
+  color: #ffffff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.success {
+  color: #15803d;
+}
+
+.error {
+  color: #b91c1c;
+}

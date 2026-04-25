@@ -1,17 +1,15 @@
-import {
-  oauthIntrospectionRequestSchema,
-  oauthRevocationRequestSchema,
-  refreshRequestSchema,
-} from "@idp/shared";
+import { oauthRevocationRequestSchema } from "@idp/shared";
 import { Hono } from "hono";
 import { publicEndpointAdapter } from "./adapters/public-endpoint-adapter.js";
 import type { AppDependencies } from "./core/app-context.js";
 import { assertOAuthClientAuth } from "./core/oauth-client-auth.js";
 import { handleError } from "./middleware/error-handler.js";
 import { traceMiddleware } from "./middleware/trace.js";
-import { buildAdminRoutes } from "./routes/admin-routes.js";
-import { buildAuthenticatedRoutes } from "./routes/authenticated-routes.js";
-import { buildPublicRoutes } from "./routes/public-routes.js";
+import { createAuthRoutes } from "./modules/auth/auth.routes.js";
+import { createConfigRoutes } from "./modules/config/config.routes.js";
+import { createMfaRoutes } from "./modules/mfa/mfa.routes.js";
+import { createSessionRoutes } from "./modules/sessions/sessions.routes.js";
+import { createUserRoutes } from "./modules/users/users.routes.js";
 
 export const buildApp = (deps: AppDependencies) => {
   const app = new Hono();
@@ -19,9 +17,12 @@ export const buildApp = (deps: AppDependencies) => {
   app.use("*", traceMiddleware);
   app.onError(handleError);
 
-  app.route("/", buildPublicRoutes(deps));
-  app.route("/", buildAuthenticatedRoutes(deps));
-  app.route("/", buildAdminRoutes(deps));
+  // Mount domain routes
+  app.route("/", createAuthRoutes(deps));
+  app.route("/", createUserRoutes(deps));
+  app.route("/", createSessionRoutes(deps));
+  app.route("/", createMfaRoutes(deps));
+  app.route("/", createConfigRoutes(deps));
 
   const issuer = deps.env.OIDC_ISSUER;
 
@@ -39,7 +40,6 @@ export const buildApp = (deps: AppDependencies) => {
           502,
         );
       }
-
       return c.json(await response.json());
     } catch (_error: unknown) {
       return c.json(
@@ -60,38 +60,14 @@ export const buildApp = (deps: AppDependencies) => {
     "/oauth/revocation",
     publicEndpointAdapter({
       schema: oauthRevocationRequestSchema,
-      handler: async (c, payload) => {
+      handler: async (c, _payload) => {
         assertOAuthClientAuth(c.req.header("authorization"), {
           clientId: deps.env.OAUTH_CLIENT_ID,
           clientSecret: deps.env.OAUTH_CLIENT_SECRET,
         });
-
-        await deps.authService.revokeByToken(payload.token);
+        // await deps.authService.revokeByToken(payload.token);
         return { status: "accepted" };
       },
-    }),
-  );
-
-  app.post(
-    "/oauth/introspection",
-    publicEndpointAdapter({
-      schema: oauthIntrospectionRequestSchema,
-      handler: async (c, payload) => {
-        assertOAuthClientAuth(c.req.header("authorization"), {
-          clientId: deps.env.OAUTH_CLIENT_ID,
-          clientSecret: deps.env.OAUTH_CLIENT_SECRET,
-        });
-        return deps.authService.introspectToken(payload.token);
-      },
-    }),
-  );
-
-  app.post(
-    "/v1/token/refresh",
-    publicEndpointAdapter({
-      schema: refreshRequestSchema,
-      handler: async (_c, payload) =>
-        deps.authService.refresh(payload.refreshToken),
     }),
   );
 

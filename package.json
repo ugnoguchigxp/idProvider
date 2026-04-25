@@ -16,6 +16,7 @@
   "scripts": {
     "build": "pnpm -r build",
     "dev": "pnpm --filter @idp/idp-server dev",
+    "dev:admin": "pnpm --filter @idp/admin-ui dev",
     "test": "pnpm -r test",
     "lint": "biome check --error-on-warnings .",
     "format": "biome check --write .",

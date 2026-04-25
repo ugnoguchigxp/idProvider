@@ -8,20 +8,70 @@ type AuthContext = {
 };
 
 const authHeaderPrefix = "Bearer ";
+const accessTokenCookieName = "idp_access_token";
+const csrfTokenCookieName = "idp_csrf_token";
 
-const getTokenFromAuthorization = (
+type AuthTokenSource = "bearer" | "cookie";
+
+const parseCookieHeader = (
+  cookieHeader: string | undefined,
+): Record<string, string> => {
+  if (!cookieHeader) return {};
+  const pairs = cookieHeader.split(";");
+  const cookies: Record<string, string> = {};
+  for (const pair of pairs) {
+    const index = pair.indexOf("=");
+    if (index <= 0) continue;
+    const key = pair.slice(0, index).trim();
+    const value = pair.slice(index + 1).trim();
+    if (!key) continue;
+    try {
+      cookies[key] = decodeURIComponent(value);
+    } catch {
+      cookies[key] = value;
+    }
+  }
+  return cookies;
+};
+
+const getTokenFromRequest = (
   authorization: string | undefined,
-): string => {
-  if (!authorization?.startsWith(authHeaderPrefix)) {
-    throw new ApiError(401, "unauthorized", "Missing bearer token");
+  cookieHeader: string | undefined,
+): { token: string; source: AuthTokenSource } => {
+  if (authorization?.startsWith(authHeaderPrefix)) {
+    const token = authorization.slice(authHeaderPrefix.length).trim();
+    if (token.length < 16) {
+      throw new ApiError(401, "unauthorized", "Invalid bearer token");
+    }
+    return { token, source: "bearer" };
   }
-
-  const token = authorization.slice(authHeaderPrefix.length).trim();
-  if (token.length < 16) {
-    throw new ApiError(401, "unauthorized", "Invalid bearer token");
+  const token = parseCookieHeader(cookieHeader)[accessTokenCookieName];
+  if (!token || token.length < 16) {
+    throw new ApiError(401, "unauthorized", "Missing access token");
   }
+  return { token, source: "cookie" };
+};
 
-  return token;
+const isSafeMethod = (method: string): boolean =>
+  method === "GET" ||
+  method === "HEAD" ||
+  method === "OPTIONS" ||
+  method === "TRACE";
+
+const assertCsrf = (
+  method: string,
+  source: AuthTokenSource,
+  cookieHeader: string | undefined,
+  csrfHeader: string | undefined,
+) => {
+  if (source !== "cookie" || isSafeMethod(method)) {
+    return;
+  }
+  const cookies = parseCookieHeader(cookieHeader);
+  const csrfCookie = cookies[csrfTokenCookieName];
+  if (!csrfCookie || !csrfHeader || csrfCookie !== csrfHeader) {
+    throw new ApiError(403, "csrf_invalid", "Invalid CSRF token");
+  }
 };
 
 const readPayload = async (c: Context): Promise<unknown> => {
@@ -55,10 +105,18 @@ export const authenticatedEndpointAdapter = <
   ) => Promise<TResult>;
 }) => {
   return async (c: Context<Env, string, Input>) => {
-    const accessToken = getTokenFromAuthorization(
+    const cookieHeader = c.req.header("cookie");
+    const authToken = getTokenFromRequest(
       c.req.header("authorization"),
+      cookieHeader,
     );
-    const auth = await options.authenticate(accessToken);
+    assertCsrf(
+      c.req.method,
+      authToken.source,
+      cookieHeader,
+      c.req.header("x-csrf-token"),
+    );
+    const auth = await options.authenticate(authToken.token);
     const parsed = options.schema.safeParse(await readPayload(c));
 
     if (!parsed.success) {

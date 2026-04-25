@@ -7,6 +7,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html"],
+      all: true,
       include: ["src/**/*.ts"],
       exclude: [
         "src/**/*.test.ts",
@@ -14,6 +15,11 @@ export default defineConfig({
         "src/mocks/**",
         "src/index.ts",
         "src/config/env.ts",
+        "src/tracing.ts",
+        "src/seed.ts",
+        "src/jobs/**",
+        "src/scratch/**",
+        "src/core/app-context.ts",
       ],
       thresholds: {
         lines: 90,

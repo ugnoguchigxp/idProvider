@@ -3,3 +3,4 @@ export * from "./schemas/admin.js";
 export * from "./schemas/auth.js";
 export * from "./schemas/session.js";
 export * from "./schemas/webauthn.js";
+export * from "./types/result.js";

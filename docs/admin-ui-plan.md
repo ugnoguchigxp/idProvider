@@ -33,8 +33,8 @@
 - **影響範囲**: `AuthService` 内のメール送信処理。
 
 ## 3. 技術スタック
-- **Frontend**: Hono + Hono JSX + HTMX (高速な開発と SSR によるセキュリティを両立)
-- **Backend**: `idp-server` 内に `/admin` ルーティングを新設
+- **Frontend**: React + TypeScript + TanStack Query + React Hook Form + Zod
+- **Backend**: `idp-server` の `/v1/admin/*` API を利用
 - **認証**: 管理者ロール (`admin` パーミッション) を持つユーザーのみに制限
 
 ## 4. DB 拡張 (`packages/db`)

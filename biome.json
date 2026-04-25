@@ -21,7 +21,7 @@
   },
   "overrides": [
     {
-      "includes": ["**/__tests__/**"],
+      "includes": ["**/*.test.ts", "**/test-utils/**", "**/scratch/**"],
       "linter": {
         "rules": {
           "suspicious": {
