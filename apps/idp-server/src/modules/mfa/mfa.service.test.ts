@@ -11,6 +11,12 @@ describe("MfaService", () => {
       mfaRepository: {
         create: vi.fn(),
         findByFactorId: vi.fn(),
+        findActiveFactorsByUserId: vi.fn().mockResolvedValue([]),
+      },
+      mfaRecoveryService: {
+        generateCodesIfMissing: vi
+          .fn()
+          .mockResolvedValue({ ok: true, value: { recoveryCodes: [] } }),
       },
       webauthnRepository: {},
       logger: {
@@ -46,6 +52,26 @@ describe("MfaService", () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.status).toBe("verified");
+      }
+    });
+
+    it("should return recovery codes on first verification", async () => {
+      deps.mfaRepository.findByFactorId.mockResolvedValue({
+        id: "f1",
+        userId: "u1",
+        type: "totp",
+        enabled: true,
+      });
+      deps.mfaRecoveryService.generateCodesIfMissing.mockResolvedValueOnce({
+        ok: true,
+        value: { recoveryCodes: ["ABCDE-FGHJK-LMNPQ-RSTUV"] },
+      });
+
+      const result = await mfaService.verifyMfa("u1", "f1", "123456");
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.recoveryCodes).toEqual(["ABCDE-FGHJK-LMNPQ-RSTUV"]);
       }
     });
 

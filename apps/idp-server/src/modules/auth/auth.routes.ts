@@ -59,6 +59,11 @@ export const createAuthRoutes = (deps: AuthRoutesDependencies) => {
           payload.password,
           ipAddress,
           userAgent,
+          {
+            mfaCode: payload.mfaCode,
+            mfaFactorId: payload.mfaFactorId,
+            mfaRecoveryCode: payload.mfaRecoveryCode,
+          },
         );
         if (!result.ok) throw result.error;
         if ("accessToken" in result.value) {

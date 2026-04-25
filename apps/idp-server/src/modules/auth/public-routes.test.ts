@@ -45,6 +45,7 @@ describe("Public Routes (via buildApp)", () => {
         enrollMfa: vi.fn(),
         verifyMfa: vi.fn(),
       },
+      mfaRecoveryService: {},
       rbacService: {
         authorizationCheck: vi.fn(),
       },

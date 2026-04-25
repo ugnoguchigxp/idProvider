@@ -11,6 +11,7 @@ describe("Config Routes Integration", () => {
       userService: { getMe: vi.fn() },
       sessionService: { listSessions: vi.fn(), revokeSession: vi.fn() },
       mfaService: { enrollMfa: vi.fn(), verifyMfa: vi.fn() },
+      mfaRecoveryService: {},
       rbacService: { authorizationCheck: vi.fn() },
       webauthnService: { generateAuthenticationOptions: vi.fn() },
       rateLimiter: { consume: vi.fn().mockResolvedValue({ allowed: true }) },

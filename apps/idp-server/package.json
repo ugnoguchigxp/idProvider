@@ -9,6 +9,8 @@
     "start": "node dist/index.js",
     "retention:run": "tsx src/jobs/run-data-retention.ts",
     "retention:dry-run": "tsx src/jobs/run-data-retention.ts --dry-run",
+    "account-deletion:finalize": "tsx src/jobs/run-account-deletion.ts",
+    "account-deletion:dry-run": "tsx src/jobs/run-account-deletion.ts --dry-run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "lint": "biome check src",

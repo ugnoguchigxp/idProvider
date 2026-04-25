@@ -23,6 +23,7 @@ describe("Global Routes", () => {
       userService: {},
       sessionService: {},
       mfaService: {},
+      mfaRecoveryService: {},
       rbacService: {
         authorizationCheck: vi.fn(),
       },

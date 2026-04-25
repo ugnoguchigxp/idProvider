@@ -21,6 +21,7 @@ describe("Auth Routes", () => {
       userService: { getMe: vi.fn() },
       sessionService: { listSessions: vi.fn() },
       mfaService: { enrollMfa: vi.fn() },
+      mfaRecoveryService: {},
       rbacService: { authorizationCheck: vi.fn() },
       rateLimiter: { consume: vi.fn().mockResolvedValue({ allowed: true }) },
       keyStore: { getPublicJwks: vi.fn() },

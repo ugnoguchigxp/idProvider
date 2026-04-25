@@ -17,6 +17,16 @@ describe("MFA Routes", () => {
           .mockResolvedValue(ok({ factorId: "f1", secret: "sec" })),
         verifyMfa: vi.fn().mockResolvedValue(ok({ status: "verified" })),
       },
+      mfaRecoveryService: {
+        generateCodesIfMissing: vi
+          .fn()
+          .mockResolvedValue(ok({ recoveryCodes: [] })),
+        regenerateCodes: vi
+          .fn()
+          .mockResolvedValue(
+            ok({ recoveryCodes: ["ABCDE-FGHJK-LMNPQ-RSTUV"] }),
+          ),
+      },
       userService: {
         getMe: vi
           .fn()
@@ -81,5 +91,38 @@ describe("MFA Routes", () => {
       }),
     });
     expect(res.status).toBe(200);
+  });
+
+  it("POST /v1/mfa/recovery-codes/regenerate should require reauth", async () => {
+    const res = await app.request("/v1/mfa/recovery-codes/regenerate", {
+      method: "POST",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.code).toBe("reauth_required");
+  });
+
+  it("POST /v1/mfa/recovery-codes/regenerate should return new codes", async () => {
+    const res = await app.request("/v1/mfa/recovery-codes/regenerate", {
+      method: "POST",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        mfaCode: "123456",
+        mfaFactorId: "00000000-0000-0000-0000-000000000000",
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.recoveryCodes).toEqual(["ABCDE-FGHJK-LMNPQ-RSTUV"]);
   });
 });

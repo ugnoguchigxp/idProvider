@@ -3,6 +3,7 @@ import {
   ApiError,
   emptyRequestSchema,
   mfaEnrollRequestSchema,
+  mfaRecoveryRegenerateRequestSchema,
   mfaVerifyRequestSchema,
   webauthnRegistrationVerifySchema,
 } from "@idp/shared";
@@ -11,9 +12,11 @@ import { authenticatedEndpointAdapter } from "../../adapters/authenticated-endpo
 import type { AuthService } from "../auth/auth.service.js";
 import type { UserService } from "../users/users.service.js";
 import type { MfaService } from "./mfa.service.js";
+import type { MfaRecoveryService } from "./mfa-recovery.service.js";
 
 export type MfaRoutesDependencies = {
   mfaService: MfaService;
+  mfaRecoveryService: MfaRecoveryService;
   userService: UserService;
   authService: AuthService;
   webauthnService: WebAuthnService;
@@ -81,11 +84,60 @@ export const createMfaRoutes = (deps: MfaRoutesDependencies) => {
       schema: webauthnRegistrationVerifySchema,
       authenticate,
       handler: async (_c, payload, auth) => {
-        return deps.webauthnService.verifyRegistrationResponse(
+        const result = await deps.webauthnService.verifyRegistrationResponse(
           auth.userId,
           payload.response,
           payload.name,
         );
+        const generated = await deps.mfaRecoveryService.generateCodesIfMissing(
+          auth.userId,
+          "initial_mfa_setup",
+        );
+        if (generated.ok && generated.value.recoveryCodes.length > 0) {
+          return {
+            ...result,
+            recoveryCodes: generated.value.recoveryCodes,
+          };
+        }
+        return result;
+      },
+    }),
+  );
+
+  app.post(
+    "/v1/mfa/recovery-codes/regenerate",
+    authenticatedEndpointAdapter({
+      schema: mfaRecoveryRegenerateRequestSchema,
+      authenticate,
+      handler: async (_c, payload, auth) => {
+        const hasPassword = Boolean(payload.currentPassword);
+        const hasMfa = Boolean(payload.mfaCode && payload.mfaFactorId);
+        if (!hasPassword && !hasMfa) {
+          throw new ApiError(
+            400,
+            "reauth_required",
+            "Password or MFA reauthentication is required",
+          );
+        }
+        if (hasPassword) {
+          await deps.userService.verifyCurrentPassword(
+            auth.userId,
+            payload.currentPassword as string,
+          );
+        }
+        if (hasMfa) {
+          await deps.mfaService.verifyMfa(
+            auth.userId,
+            payload.mfaFactorId as string,
+            payload.mfaCode as string,
+            { issueRecoveryCodes: false },
+          );
+        }
+        const result = await deps.mfaRecoveryService.regenerateCodes(
+          auth.userId,
+        );
+        if (!result.ok) throw result.error;
+        return result.value;
       },
     }),
   );

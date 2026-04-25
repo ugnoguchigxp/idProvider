@@ -21,6 +21,7 @@ describe("AuthService", () => {
         create: vi.fn(),
         findByEmail: vi.fn(),
         findWithPasswordByEmail: vi.fn(),
+        findById: vi.fn().mockResolvedValue({ id: "u1", status: "active" }),
         update: vi.fn(),
       },
       sessionRepository: {
@@ -41,10 +42,19 @@ describe("AuthService", () => {
           .mockResolvedValue({ permissions: [], entitlements: {} }),
       },
       auditRepository: { createAuditLog: vi.fn() },
+      mfaService: {
+        hasEnabledMfa: vi.fn().mockResolvedValue(false),
+        verifyMfa: vi.fn(),
+      },
+      mfaRecoveryService: {
+        consumeCode: vi.fn(),
+      },
       configService: { getSocialLoginConfig: vi.fn() },
+      rateLimiter: { consume: vi.fn().mockResolvedValue({ allowed: true }) },
       env: {
         ACCESS_TOKEN_TTL_SECONDS: 900,
         REFRESH_TOKEN_TTL_SECONDS: 2_592_000,
+        RATE_LIMIT_MFA_RECOVERY_PER_MIN: 5,
       },
       logger: { info: vi.fn(), error: vi.fn() },
     };
@@ -72,10 +82,59 @@ describe("AuthService", () => {
     it("should return tokens on success", async () => {
       deps.userRepository.findWithPasswordByEmail.mockResolvedValue({
         id: "u1",
+        status: "active",
         passwordHash: "pass",
       });
       const result = await service.login("a@b.com", "pass", "127.0.0.1", "UA");
       expect(result.ok).toBe(true);
+    });
+
+    it("should require MFA when enabled and no method is provided", async () => {
+      deps.userRepository.findWithPasswordByEmail.mockResolvedValue({
+        id: "u1",
+        status: "active",
+        passwordHash: "pass",
+      });
+      deps.mfaService.hasEnabledMfa.mockResolvedValue(true);
+
+      const result = await service.login("a@b.com", "pass", "127.0.0.1", "UA");
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toEqual({ mfaRequired: true, userId: "u1" });
+      }
+    });
+
+    it("should consume recovery code when MFA is enabled", async () => {
+      deps.userRepository.findWithPasswordByEmail.mockResolvedValue({
+        id: "u1",
+        status: "active",
+        passwordHash: "pass",
+      });
+      deps.mfaService.hasEnabledMfa.mockResolvedValue(true);
+
+      const result = await service.login("a@b.com", "pass", "127.0.0.1", "UA", {
+        mfaRecoveryCode: "ABCDE-FGHJK-LMNPQ-RSTUV",
+      });
+
+      expect(result.ok).toBe(true);
+      expect(deps.mfaRecoveryService.consumeCode).toHaveBeenCalledWith(
+        "u1",
+        "ABCDE-FGHJK-LMNPQ-RSTUV",
+      );
+    });
+
+    it("should reject simultaneous MFA code and recovery code", async () => {
+      await expect(
+        service.login("a@b.com", "pass", "127.0.0.1", "UA", {
+          mfaCode: "123456",
+          mfaFactorId: "00000000-0000-0000-0000-000000000000",
+          mfaRecoveryCode: "ABCDE-FGHJK-LMNPQ-RSTUV",
+        }),
+      ).rejects.toMatchObject({
+        status: 400,
+        code: "mfa_method_conflict",
+      });
     });
 
     it("should throw on invalid credentials", async () => {
@@ -115,6 +174,7 @@ describe("AuthService", () => {
     it("should rotate refresh token and persist new token hashes", async () => {
       deps.sessionRepository.findByRefreshTokenHash.mockResolvedValue({
         id: "s1",
+        userStatus: "active",
       });
       deps.sessionRepository.rotateTokens.mockResolvedValue(true);
 
@@ -136,6 +196,7 @@ describe("AuthService", () => {
     it("should revoke the session if refresh rotation fails", async () => {
       deps.sessionRepository.findByRefreshTokenHash.mockResolvedValue({
         id: "s1",
+        userStatus: "active",
       });
       deps.sessionRepository.rotateTokens.mockResolvedValue(false);
 
@@ -152,7 +213,10 @@ describe("AuthService", () => {
     });
 
     it("should request reset for existing user", async () => {
-      deps.userRepository.findByEmail.mockResolvedValue({ id: "u1" });
+      deps.userRepository.findByEmail.mockResolvedValue({
+        id: "u1",
+        status: "active",
+      });
       const result = await service.requestPasswordReset("a@b.com");
       expect(result.ok).toBe(true);
       expect(

@@ -17,6 +17,7 @@ describe("Session Routes Integration", () => {
         revokeAllSessions: vi.fn(),
       },
       mfaService: { enrollMfa: vi.fn(), verifyMfa: vi.fn() },
+      mfaRecoveryService: {},
       rbacService: { authorizationCheck: vi.fn() },
       webauthnService: { generateAuthenticationOptions: vi.fn() },
       rateLimiter: { consume: vi.fn().mockResolvedValue({ allowed: true }) },

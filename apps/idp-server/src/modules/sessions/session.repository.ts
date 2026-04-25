@@ -7,6 +7,7 @@ import {
   gt,
   isNull,
   userSessions,
+  users,
 } from "@idp/db";
 import { BaseRepository } from "../../core/base-repository.js";
 
@@ -24,8 +25,14 @@ export class SessionRepository extends BaseRepository {
   async findByAccessTokenHash(hash: string, tx?: DbTransaction | DbClient) {
     const db = tx ?? this.db;
     const result = await db
-      .select()
+      .select({
+        id: userSessions.id,
+        userId: userSessions.userId,
+        expiresAt: userSessions.expiresAt,
+        userStatus: users.status,
+      })
       .from(userSessions)
+      .innerJoin(users, eq(userSessions.userId, users.id))
       .where(
         and(
           eq(userSessions.accessTokenHash, hash),
@@ -40,8 +47,14 @@ export class SessionRepository extends BaseRepository {
   async findByRefreshTokenHash(hash: string, tx?: DbTransaction | DbClient) {
     const db = tx ?? this.db;
     const result = await db
-      .select()
+      .select({
+        id: userSessions.id,
+        userId: userSessions.userId,
+        refreshExpiresAt: userSessions.refreshExpiresAt,
+        userStatus: users.status,
+      })
       .from(userSessions)
+      .innerJoin(users, eq(userSessions.userId, users.id))
       .where(
         and(
           eq(userSessions.refreshTokenHash, hash),
