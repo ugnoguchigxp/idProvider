@@ -339,7 +339,7 @@ components:
     MeResponse:
       type: object
       additionalProperties: false
-      required: [userId, email, status, emailVerified]
+      required: [userId, email, status, emailVerified, profile]
       properties:
         userId:
           type: string
@@ -351,6 +351,61 @@ components:
           type: string
         emailVerified:
           type: boolean
+        profile:
+          $ref: '#/components/schemas/UserProfile'
+
+    UserProfile:
+      type: object
+      additionalProperties: false
+      required: [displayName, givenName, familyName, preferredUsername, locale, zoneinfo]
+      properties:
+        displayName:
+          type: [string, 'null']
+          maxLength: 80
+        givenName:
+          type: [string, 'null']
+          maxLength: 80
+        familyName:
+          type: [string, 'null']
+          maxLength: 80
+        preferredUsername:
+          type: [string, 'null']
+          pattern: '^(?!.*[._-]{2})(?!.*[._-]$)[a-z0-9][a-z0-9._-]{2,63}$'
+        locale:
+          type: [string, 'null']
+          maxLength: 35
+        zoneinfo:
+          type: [string, 'null']
+          maxLength: 64
+
+    UpdateMeRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        givenName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        familyName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        preferredUsername:
+          type: string
+          pattern: '^(?!.*[._-]{2})(?!.*[._-]$)[a-z0-9][a-z0-9._-]{2,63}$'
+        locale:
+          type: string
+          minLength: 1
+          maxLength: 35
+        zoneinfo:
+          type: string
+          minLength: 1
+          maxLength: 64
 
     MfaEnrollResponse:
       type: object
@@ -966,6 +1021,55 @@ paths:
                 $ref: '#/components/schemas/MeResponse'
         '401':
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      tags: [auth-protected]
+      operationId: patchV1Me
+      summary: Partially update current authenticated user's profile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMeRequest'
+      responses:
+        '200':
+          description: Updated current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: CSRF validation failed for cookie-based authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Preferred username already taken
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
           content:
             application/json:
               schema:

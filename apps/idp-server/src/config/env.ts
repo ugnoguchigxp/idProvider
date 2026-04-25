@@ -60,6 +60,33 @@ const envSchema = z
       .default(90),
     RETENTION_BATCH_CHUNK_SIZE: z.coerce.number().int().positive().default(500),
     RETENTION_JOB_LOCK_KEY: z.coerce.number().int().default(91_000_101),
+    ACCOUNT_DELETION_GRACE_DAYS: z.coerce
+      .number()
+      .int()
+      .nonnegative()
+      .default(30),
+    ACCOUNT_DELETION_JOB_LOCK_KEY: z.coerce.number().int().default(91_000_102),
+    RATE_LIMIT_ACCOUNT_DELETE_PER_HOUR: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(3),
+    RATE_LIMIT_PROFILE_UPDATE_PER_10_MIN: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(30),
+    MFA_RECOVERY_CODE_PEPPER: z
+      .string()
+      .min(16)
+      .default("dev-mfa-recovery-pepper"),
+    MFA_RECOVERY_CODE_COUNT: z.coerce.number().int().positive().default(10),
+    MFA_RECOVERY_CODE_LENGTH: z.coerce.number().int().min(20).default(20),
+    RATE_LIMIT_MFA_RECOVERY_PER_MIN: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(5),
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
     JWT_PRIVATE_KEY: z.string().min(1),
     DATABASE_URL: z.string().url(),
@@ -84,6 +111,18 @@ const envSchema = z
         message:
           "JWT_PRIVATE_KEY must not use the development default in production",
         path: ["JWT_PRIVATE_KEY"],
+      });
+    }
+
+    if (
+      env.NODE_ENV === "production" &&
+      env.MFA_RECOVERY_CODE_PEPPER === "dev-mfa-recovery-pepper"
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "MFA_RECOVERY_CODE_PEPPER must not use the development default in production",
+        path: ["MFA_RECOVERY_CODE_PEPPER"],
       });
     }
 

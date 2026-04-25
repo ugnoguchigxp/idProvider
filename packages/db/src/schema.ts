@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   index,
@@ -6,6 +7,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
@@ -13,6 +15,11 @@ import {
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   status: varchar("status", { length: 32 }).notNull().default("active"),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  deletionRequestedAt: timestamp("deletion_requested_at", {
+    withTimezone: true,
+  }),
+  deletionDueAt: timestamp("deletion_due_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -48,6 +55,31 @@ export const userPasswords = pgTable("user_passwords", {
     .defaultNow(),
 });
 
+export const userProfiles = pgTable(
+  "user_profiles",
+  {
+    userId: uuid("user_id")
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    displayName: varchar("display_name", { length: 80 }),
+    givenName: varchar("given_name", { length: 80 }),
+    familyName: varchar("family_name", { length: 80 }),
+    preferredUsername: varchar("preferred_username", { length: 64 }),
+    locale: varchar("locale", { length: 35 }),
+    zoneinfo: varchar("zoneinfo", { length: 64 }),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    preferredUsernameLowerUnique: uniqueIndex(
+      "user_profiles_preferred_username_lower_key",
+    )
+      .on(sql`lower(${table.preferredUsername})`)
+      .where(sql`${table.preferredUsername} IS NOT NULL`),
+  }),
+);
+
 export const mfaFactors = pgTable(
   "mfa_factors",
   {
@@ -66,6 +98,34 @@ export const mfaFactors = pgTable(
   },
   (table) => ({
     userIdIdx: index("mfa_factors_user_id_idx").on(table.userId),
+  }),
+);
+
+export const mfaRecoveryCodes = pgTable(
+  "mfa_recovery_codes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    batchId: uuid("batch_id").notNull(),
+    lookupHash: text("lookup_hash").notNull(),
+    codeHash: text("code_hash").notNull(),
+    lastChars: varchar("last_chars", { length: 8 }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    userIdIdx: index("mfa_recovery_codes_user_id_idx").on(table.userId),
+    lookupHashUnique: unique("mfa_recovery_codes_lookup_hash_key").on(
+      table.lookupHash,
+    ),
+    activeBatchIdx: index("mfa_recovery_codes_active_batch_idx")
+      .on(table.userId, table.batchId)
+      .where(sql`${table.usedAt} IS NULL AND ${table.revokedAt} IS NULL`),
   }),
 );
 

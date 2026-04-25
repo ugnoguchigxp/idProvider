@@ -19,12 +19,18 @@ import { AuthService } from "./modules/auth/auth.service.js";
 import { VerificationRepository } from "./modules/auth/verification.repository.js";
 import { MfaRepository } from "./modules/mfa/mfa.repository.js";
 import { MfaService } from "./modules/mfa/mfa.service.js";
+import { MfaRecoveryRepository } from "./modules/mfa/mfa-recovery.repository.js";
+import { MfaRecoveryService } from "./modules/mfa/mfa-recovery.service.js";
 import { RBACRepository } from "./modules/rbac/rbac.repository.js";
 import { RBACService } from "./modules/rbac/rbac.service.js";
 import { SessionRepository } from "./modules/sessions/session.repository.js";
 import { SessionService } from "./modules/sessions/sessions.service.js";
+import { AccountDeletionRepository } from "./modules/users/account-deletion.repository.js";
+import { AccountDeletionService } from "./modules/users/account-deletion.service.js";
 import { IdentityRepository } from "./modules/users/identity.repository.js";
+import { NoopProfileCache } from "./modules/users/profile-cache.js";
 import { UserRepository } from "./modules/users/user.repository.js";
+import { UserProfileRepository } from "./modules/users/user-profile.repository.js";
 import { UserService } from "./modules/users/users.service.js";
 
 const bootstrap = async () => {
@@ -47,13 +53,28 @@ const bootstrap = async () => {
   const authRepository = new AuthRepository(db);
   const verificationRepository = new VerificationRepository(db);
   const userRepository = new UserRepository(db);
+  const userProfileRepository = new UserProfileRepository(db);
   const identityRepository = new IdentityRepository(db);
+  const accountDeletionRepository = new AccountDeletionRepository(db);
   const sessionRepository = new SessionRepository(db);
   const mfaRepository = new MfaRepository(db);
+  const mfaRecoveryRepository = new MfaRecoveryRepository(db);
   const rbacRepository = new RBACRepository(db);
 
   // Services
   const rbacService = new RBACService(rbacRepository);
+
+  const mfaRecoveryService = new MfaRecoveryService({
+    mfaRecoveryRepository,
+    auditRepository,
+    env,
+    logger,
+  });
+
+  const mfaService = new MfaService({
+    mfaRepository,
+    mfaRecoveryService,
+  });
 
   const authService = new AuthService({
     authRepository,
@@ -62,13 +83,19 @@ const bootstrap = async () => {
     sessionRepository,
     rbacService,
     auditRepository,
+    mfaService,
+    mfaRecoveryService,
     configService,
+    rateLimiter,
     env,
     logger,
   });
 
   const userService = new UserService({
+    db,
     userRepository,
+    userProfileRepository,
+    profileCache: new NoopProfileCache(),
     identityRepository,
     auditRepository,
     logger,
@@ -78,8 +105,13 @@ const bootstrap = async () => {
     sessionRepository,
   });
 
-  const mfaService = new MfaService({
-    mfaRepository,
+  const accountDeletionService = new AccountDeletionService({
+    accountDeletionRepository,
+    userRepository,
+    mfaService,
+    auditRepository,
+    env,
+    logger,
   });
 
   const webauthnService = new WebAuthnService(db, redis, {
@@ -95,8 +127,10 @@ const bootstrap = async () => {
     env,
     authService,
     userService,
+    accountDeletionService,
     sessionService,
     mfaService,
+    mfaRecoveryService,
     rbacService,
     webauthnService,
     configService,
@@ -117,8 +151,13 @@ const bootstrap = async () => {
   const oidcProvider = createOidcProvider(
     env,
     await keyStore.getActivePrivateJwks(),
-    // biome-ignore lint/suspicious/noExplicitAny: Required for oidc-provider compatibility
-    authService as any,
+    {
+      getMe: async (userId: string) => {
+        return userService.getOidcAccount(userId);
+      },
+      getAuthorizationSnapshot:
+        rbacService.getAuthorizationSnapshot.bind(rbacService),
+    },
   );
   const oidcServer = oidcProvider.listen(env.OIDC_PORT, () => {
     logger.info(

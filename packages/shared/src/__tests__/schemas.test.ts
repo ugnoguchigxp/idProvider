@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { accountDeletionRequestSchema as accountDeletionSchema } from "../schemas/account.js";
 import {
   entitlementCheckRequestSchema,
   loginRequestSchema,
+  mfaRecoveryRegenerateRequestSchema,
   mfaVerifyRequestSchema,
   signupRequestSchema,
 } from "../schemas/auth.js";
 import { revokeSessionRequestSchema } from "../schemas/session.js";
+import { updateUserProfileRequestSchema } from "../schemas/user.js";
 
 describe("auth schemas", () => {
   it("signupRequestSchema normalizes email", () => {
@@ -21,8 +24,20 @@ describe("auth schemas", () => {
     const parsed = loginRequestSchema.parse({
       email: " LOGIN@example.com ",
       password: "password",
+      mfaRecoveryCode: "ABCDE-FGHJK-LMNPQ-RSTUV",
     });
     expect(parsed.email).toBe("login@example.com");
+    expect(parsed.mfaRecoveryCode).toBe("ABCDE-FGHJK-LMNPQ-RSTUV");
+  });
+
+  it("loginRequestSchema rejects partial MFA factor input", () => {
+    expect(() =>
+      loginRequestSchema.parse({
+        email: "login@example.com",
+        password: "password",
+        mfaCode: "123456",
+      }),
+    ).toThrow();
   });
 
   it("mfaVerifyRequestSchema validates code", () => {
@@ -38,6 +53,12 @@ describe("auth schemas", () => {
         factorId,
         code: "abc",
       }),
+    ).toThrow();
+  });
+
+  it("mfaRecoveryRegenerateRequestSchema requires MFA code and factor as a pair", () => {
+    expect(() =>
+      mfaRecoveryRegenerateRequestSchema.parse({ mfaCode: "123456" }),
     ).toThrow();
   });
 
@@ -65,6 +86,46 @@ describe("session schemas", () => {
 
     expect(() =>
       revokeSessionRequestSchema.parse({ sessionId: "not-a-uuid" }),
+    ).toThrow();
+  });
+});
+
+describe("account schemas", () => {
+  it("accountDeletionRequestSchema allows empty payload for service-side reauth checks", () => {
+    const parsed = accountDeletionSchema.parse({});
+    expect(parsed).toEqual({});
+  });
+
+  it("accountDeletionRequestSchema requires MFA code and factor as a pair", () => {
+    expect(() =>
+      accountDeletionSchema.parse({
+        mfaCode: "123456",
+      }),
+    ).toThrow();
+  });
+});
+
+describe("user schemas", () => {
+  it("updateUserProfileRequestSchema requires at least one field", () => {
+    expect(() => updateUserProfileRequestSchema.parse({})).toThrow();
+  });
+
+  it("updateUserProfileRequestSchema normalizes locale and username", () => {
+    const parsed = updateUserProfileRequestSchema.parse({
+      preferredUsername: "  Taro_Yamada  ",
+      locale: "ja-jp",
+      zoneinfo: "Asia/Tokyo",
+    });
+
+    expect(parsed.preferredUsername).toBe("taro_yamada");
+    expect(parsed.locale).toBe("ja-JP");
+  });
+
+  it("updateUserProfileRequestSchema rejects invalid timezone", () => {
+    expect(() =>
+      updateUserProfileRequestSchema.parse({
+        zoneinfo: "Mars/Olympus",
+      }),
     ).toThrow();
   });
 });

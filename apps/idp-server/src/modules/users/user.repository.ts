@@ -4,6 +4,7 @@ import {
   eq,
   userEmails,
   userPasswords,
+  userProfiles,
   users,
 } from "@idp/db";
 import { BaseRepository } from "../../core/base-repository.js";
@@ -16,13 +17,38 @@ export class UserRepository extends BaseRepository {
         id: users.id,
         status: users.status,
         email: userEmails.email,
+        emailVerified: userEmails.isVerified,
+        profileDisplayName: userProfiles.displayName,
+        profileGivenName: userProfiles.givenName,
+        profileFamilyName: userProfiles.familyName,
+        profilePreferredUsername: userProfiles.preferredUsername,
+        profileLocale: userProfiles.locale,
+        profileZoneinfo: userProfiles.zoneinfo,
+        profileUpdatedAt: userProfiles.updatedAt,
         createdAt: users.createdAt,
       })
       .from(users)
       .leftJoin(userEmails, eq(users.id, userEmails.userId))
+      .leftJoin(userProfiles, eq(users.id, userProfiles.userId))
       .where(eq(users.id, id))
       .limit(1);
-    return result[0] ?? null;
+    if (!result[0]) return null;
+    return {
+      id: result[0].id,
+      status: result[0].status,
+      email: result[0].email,
+      emailVerified: result[0].emailVerified,
+      createdAt: result[0].createdAt,
+      profile: {
+        displayName: result[0].profileDisplayName,
+        givenName: result[0].profileGivenName,
+        familyName: result[0].profileFamilyName,
+        preferredUsername: result[0].profilePreferredUsername,
+        locale: result[0].profileLocale,
+        zoneinfo: result[0].profileZoneinfo,
+        updatedAt: result[0].profileUpdatedAt,
+      },
+    };
   }
 
   async findWithPasswordById(id: string, tx?: DbTransaction | DbClient) {
@@ -30,6 +56,7 @@ export class UserRepository extends BaseRepository {
     const result = await db
       .select({
         id: users.id,
+        status: users.status,
         passwordHash: userPasswords.passwordHash,
       })
       .from(users)
@@ -60,6 +87,7 @@ export class UserRepository extends BaseRepository {
     const result = await db
       .select({
         id: users.id,
+        status: users.status,
         passwordHash: userPasswords.passwordHash,
         isVerified: userEmails.isVerified,
       })
@@ -75,7 +103,7 @@ export class UserRepository extends BaseRepository {
     input: {
       email: string;
       passwordHash: string;
-      status?: "active" | "suspended";
+      status?: "active" | "suspended" | "deleted";
     },
     tx?: DbTransaction | DbClient,
   ) {
