@@ -107,6 +107,58 @@ CREATE TABLE IF NOT EXISTS user_roles (
   UNIQUE(user_id, role_id)
 );
 
+CREATE TABLE IF NOT EXISTS organizations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  key VARCHAR(64) NOT NULL UNIQUE,
+  name VARCHAR(128) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS groups (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  key VARCHAR(64) NOT NULL,
+  name VARCHAR(128) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(organization_id, key)
+);
+
+CREATE INDEX IF NOT EXISTS groups_organization_id_idx ON groups(organization_id);
+
+CREATE TABLE IF NOT EXISTS group_memberships (
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(user_id, group_id)
+);
+
+CREATE INDEX IF NOT EXISTS group_memberships_user_id_idx ON group_memberships(user_id);
+CREATE INDEX IF NOT EXISTS group_memberships_group_id_idx ON group_memberships(group_id);
+
+CREATE TABLE IF NOT EXISTS group_roles (
+  group_id UUID NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(group_id, role_id)
+);
+
+CREATE TABLE IF NOT EXISTS entitlements (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  key VARCHAR(128) NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT true,
+  value JSONB NOT NULL DEFAULT '{}'::jsonb,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  group_id UUID REFERENCES groups(id) ON DELETE CASCADE,
+  organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+  expires_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS entitlements_key_idx ON entitlements(key);
+CREATE INDEX IF NOT EXISTS entitlements_user_id_idx ON entitlements(user_id);
+CREATE INDEX IF NOT EXISTS entitlements_group_id_idx ON entitlements(group_id);
+CREATE INDEX IF NOT EXISTS entitlements_organization_id_idx ON entitlements(organization_id);
+
 CREATE TABLE IF NOT EXISTS security_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES users(id) ON DELETE SET NULL,
@@ -135,3 +187,14 @@ CREATE TABLE IF NOT EXISTS signing_keys (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   expires_at TIMESTAMPTZ
 );
+
+CREATE TABLE IF NOT EXISTS legal_holds (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  reason TEXT NOT NULL,
+  expires_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS legal_holds_user_id_idx ON legal_holds(user_id);
+CREATE INDEX IF NOT EXISTS legal_holds_expires_at_idx ON legal_holds(expires_at);

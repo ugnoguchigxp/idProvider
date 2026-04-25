@@ -1,21 +1,124 @@
 import { z } from "zod";
 
-const envSchema = z.object({
-  NODE_ENV: z
-    .enum(["development", "test", "production"])
-    .default("development"),
-  PORT: z.coerce.number().int().positive().default(3000),
-  OIDC_PORT: z.coerce.number().int().positive().default(3001),
-  OIDC_ISSUER: z.string().url().default("http://localhost:3001"),
-  OAUTH_CLIENT_ID: z.string().min(1).default("local-client"),
-  OAUTH_CLIENT_SECRET: z.string().min(1).default("local-client-secret"),
-  LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
-  JWT_PRIVATE_KEY: z.string().min(1),
-  DATABASE_URL: z.string().url(),
-  REDIS_URL: z.string().url(),
-  GOOGLE_CLIENT_ID: z.string().min(1),
-  GOOGLE_CLIENT_SECRET: z.string().min(1),
-});
+const envSchema = z
+  .object({
+    NODE_ENV: z
+      .enum(["development", "test", "production"])
+      .default("development"),
+    PORT: z.coerce.number().int().positive().default(3000),
+    OIDC_PORT: z.coerce.number().int().positive().default(3001),
+    OIDC_ISSUER: z.string().url().default("http://localhost:3001"),
+    OAUTH_CLIENT_ID: z.string().min(1).default("local-client"),
+    OAUTH_CLIENT_SECRET: z.string().min(1).default("local-client-secret"),
+    ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+    REFRESH_TOKEN_TTL_SECONDS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(2_592_000),
+    ARGON2_MEMORY_COST: z.coerce.number().int().min(4096).default(19456),
+    ARGON2_TIME_COST: z.coerce.number().int().min(1).default(2),
+    ARGON2_PARALLELISM: z.coerce.number().int().min(1).default(1),
+    RATE_LIMIT_SIGNUP_PER_MIN: z.coerce.number().int().min(1).default(10),
+    RATE_LIMIT_LOGIN_PER_MIN: z.coerce.number().int().min(1).default(20),
+    MFA_ISSUER: z.string().min(1).default("gxp-idProvider"),
+    JWKS_ROTATION_INTERVAL_HOURS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(720),
+    JWKS_GRACE_PERIOD_HOURS: z.coerce.number().int().positive().default(72),
+    RETENTION_AUDIT_LOG_ANONYMIZE_DAYS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(365),
+    RETENTION_AUDIT_LOG_DELETE_DAYS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(2555),
+    RETENTION_SECURITY_EVENT_ANONYMIZE_DAYS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(90),
+    RETENTION_SECURITY_EVENT_DELETE_DAYS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(365),
+    RETENTION_SESSION_ANONYMIZE_DAYS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(30),
+    RETENTION_SESSION_DELETE_DAYS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(90),
+    RETENTION_BATCH_CHUNK_SIZE: z.coerce.number().int().positive().default(500),
+    RETENTION_JOB_LOCK_KEY: z.coerce.number().int().default(91_000_101),
+    LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+    JWT_PRIVATE_KEY: z.string().min(1),
+    DATABASE_URL: z.string().url(),
+    REDIS_URL: z.string().url(),
+    OTEL_EXPORTER_OTLP_ENDPOINT: z
+      .string()
+      .url()
+      .default("http://localhost:4318/v1/traces"),
+    GOOGLE_CLIENT_ID: z.string().min(1),
+    GOOGLE_CLIENT_SECRET: z.string().min(1),
+  })
+  .superRefine((env, ctx) => {
+    if (
+      env.NODE_ENV === "production" &&
+      env.JWT_PRIVATE_KEY === "dev-private-key"
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "JWT_PRIVATE_KEY must not use the development default in production",
+        path: ["JWT_PRIVATE_KEY"],
+      });
+    }
+
+    if (
+      env.RETENTION_AUDIT_LOG_ANONYMIZE_DAYS >
+      env.RETENTION_AUDIT_LOG_DELETE_DAYS
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "RETENTION_AUDIT_LOG_ANONYMIZE_DAYS must be <= RETENTION_AUDIT_LOG_DELETE_DAYS",
+        path: ["RETENTION_AUDIT_LOG_ANONYMIZE_DAYS"],
+      });
+    }
+
+    if (
+      env.RETENTION_SECURITY_EVENT_ANONYMIZE_DAYS >
+      env.RETENTION_SECURITY_EVENT_DELETE_DAYS
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "RETENTION_SECURITY_EVENT_ANONYMIZE_DAYS must be <= RETENTION_SECURITY_EVENT_DELETE_DAYS",
+        path: ["RETENTION_SECURITY_EVENT_ANONYMIZE_DAYS"],
+      });
+    }
+
+    if (
+      env.RETENTION_SESSION_ANONYMIZE_DAYS > env.RETENTION_SESSION_DELETE_DAYS
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "RETENTION_SESSION_ANONYMIZE_DAYS must be <= RETENTION_SESSION_DELETE_DAYS",
+        path: ["RETENTION_SESSION_ANONYMIZE_DAYS"],
+      });
+    }
+  });
 
 export type AppEnv = z.infer<typeof envSchema>;
 

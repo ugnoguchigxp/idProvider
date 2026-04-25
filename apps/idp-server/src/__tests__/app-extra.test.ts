@@ -27,6 +27,9 @@ describe("Public Routes (via buildApp)", () => {
       rateLimiter: {
         consume: vi.fn().mockResolvedValue({ allowed: true, remaining: 10 }),
       },
+      keyStore: {
+        getPublicJwks: vi.fn().mockResolvedValue({ keys: [] }),
+      },
       logger: {
         info: vi.fn(),
         error: vi.fn(),

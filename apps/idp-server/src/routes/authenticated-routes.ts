@@ -1,6 +1,7 @@
 import {
   authCheckRequestSchema,
   emptyRequestSchema,
+  entitlementCheckRequestSchema,
   googleLinkRequestSchema,
   googleUnlinkRequestSchema,
   mfaEnrollRequestSchema,
@@ -103,12 +104,41 @@ export const buildAuthenticatedRoutes = (deps: AppDependencies) => {
           userId: auth.userId,
           action: payload.action,
           resource: payload.resource,
+          ...(payload.organizationId
+            ? { organizationId: payload.organizationId }
+            : {}),
+          ...(payload.groupId ? { groupId: payload.groupId } : {}),
         });
 
         return {
           allowed: result.allowed,
           permissionKey: result.permissionKey,
+          source: result.source,
         };
+      },
+    }),
+  );
+
+  app.post(
+    "/v1/entitlements/check",
+    authenticatedEndpointAdapter({
+      schema: entitlementCheckRequestSchema,
+      authenticate: deps.authService.authenticateAccessToken.bind(
+        deps.authService,
+      ),
+      handler: async (_c, payload, auth) => {
+        const result = await deps.authService.entitlementCheck({
+          userId: auth.userId,
+          key: payload.key,
+          ...(payload.organizationId
+            ? { organizationId: payload.organizationId }
+            : {}),
+          ...(payload.groupId ? { groupId: payload.groupId } : {}),
+          ...(typeof payload.quantity === "number"
+            ? { quantity: payload.quantity }
+            : {}),
+        });
+        return result;
       },
     }),
   );

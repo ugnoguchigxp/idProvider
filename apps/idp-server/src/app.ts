@@ -23,18 +23,36 @@ export const buildApp = (deps: AppDependencies) => {
 
   const issuer = deps.env.OIDC_ISSUER;
 
-  app.get("/.well-known/openid-configuration", (c) =>
-    c.json({
-      issuer,
-      authorization_endpoint: `${issuer}/oauth/authorize`,
-      token_endpoint: `${issuer}/oauth/token`,
-      revocation_endpoint: `${issuer}/oauth/revocation`,
-      introspection_endpoint: `${issuer}/oauth/introspection`,
-      jwks_uri: `${issuer}/.well-known/jwks.json`,
-    }),
-  );
+  app.get("/.well-known/openid-configuration", async (c) => {
+    try {
+      const response = await fetch(
+        `${issuer}/.well-known/openid-configuration`,
+      );
+      if (!response.ok) {
+        return c.json(
+          {
+            code: "oidc_discovery_unavailable",
+            message: "OIDC discovery is unavailable",
+          },
+          502,
+        );
+      }
 
-  app.get("/.well-known/jwks.json", (c) => c.json({ keys: [] }));
+      return c.json(await response.json());
+    } catch (_error: unknown) {
+      return c.json(
+        {
+          code: "oidc_discovery_unavailable",
+          message: "OIDC discovery is unavailable",
+        },
+        502,
+      );
+    }
+  });
+
+  app.get("/.well-known/jwks.json", async (c) =>
+    c.json(await deps.keyStore.getPublicJwks()),
+  );
 
   app.post(
     "/oauth/revocation",

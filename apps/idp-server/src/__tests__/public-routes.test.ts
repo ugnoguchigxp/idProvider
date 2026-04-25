@@ -7,6 +7,14 @@ describe("Public Routes (via buildApp)", () => {
   let app: Hono;
 
   beforeEach(() => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ issuer: "http://localhost:3001" }),
+      }),
+    );
+
     deps = {
       env: {
         OIDC_ISSUER: "http://localhost:3001",
@@ -29,6 +37,9 @@ describe("Public Routes (via buildApp)", () => {
       },
       rateLimiter: {
         consume: vi.fn().mockResolvedValue({ allowed: true, remaining: 10 }),
+      },
+      keyStore: {
+        getPublicJwks: vi.fn().mockResolvedValue({ keys: [] }),
       },
       logger: {
         info: vi.fn(),
@@ -153,6 +164,12 @@ describe("Public Routes (via buildApp)", () => {
     const res = await app.request("/.well-known/openid-configuration");
     expect(res.status).toBe(200);
     expect(await res.json()).toHaveProperty("issuer");
+  });
+
+  it("GET /.well-known/openid-configuration returns 502 on fetch error", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValueOnce(new Error("network")));
+    const res = await app.request("/.well-known/openid-configuration");
+    expect(res.status).toBe(502);
   });
 
   it("POST /oauth/revocation works", async () => {

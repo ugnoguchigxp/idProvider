@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  entitlementCheckRequestSchema,
   loginRequestSchema,
   mfaVerifyRequestSchema,
   signupRequestSchema,
@@ -36,6 +37,21 @@ describe("auth schemas", () => {
       mfaVerifyRequestSchema.parse({
         factorId,
         code: "abc",
+      }),
+    ).toThrow();
+  });
+
+  it("entitlementCheckRequestSchema validates quantity", () => {
+    const parsed = entitlementCheckRequestSchema.parse({
+      key: "max_projects",
+      quantity: 3,
+    });
+    expect(parsed.key).toBe("max_projects");
+
+    expect(() =>
+      entitlementCheckRequestSchema.parse({
+        key: "max_projects",
+        quantity: 0,
       }),
     ).toThrow();
   });

@@ -40,6 +40,10 @@ describe("AuthService", () => {
       delete: vi.fn().mockReturnThis(),
     };
     service = new AuthService(db);
+    vi.spyOn(service, "getAuthorizationSnapshot").mockResolvedValue({
+      permissions: [],
+      entitlements: {},
+    });
   });
 
   describe("signup", () => {
@@ -399,13 +403,35 @@ describe("AuthService", () => {
 
   describe("Authorization", () => {
     it("authorizationCheck returns allowed status", async () => {
-      db.limit.mockResolvedValueOnce([{ permissionId: "p-1" }]);
+      db.where.mockResolvedValueOnce([{ key: "file:read" }]);
+      db.where.mockResolvedValueOnce([]);
       const result = await service.authorizationCheck({
         userId: "user-1",
         action: "read",
         resource: "file",
       });
       expect(result.allowed).toBe(true);
+    });
+
+    it("entitlementCheck returns denied when not found", async () => {
+      db.limit.mockResolvedValueOnce([]); // user scope
+      db.limit.mockResolvedValueOnce([]); // group scope
+      const result = await service.entitlementCheck({
+        userId: "user-1",
+        key: "api_access",
+      });
+      expect(result.granted).toBe(false);
+    });
+
+    it("entitlementCheck does not resolve organization entitlement without organizationId", async () => {
+      db.limit.mockResolvedValueOnce([]); // user scope
+      db.limit.mockResolvedValueOnce([]); // group scope
+      const result = await service.entitlementCheck({
+        userId: "user-1",
+        key: "max_projects",
+      });
+      expect(result.granted).toBe(false);
+      expect(db.limit).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -506,6 +532,8 @@ describe("AuthService", () => {
           sub: "user-1",
           sid: "session-1",
           exp: Math.floor(expiresAt.getTime() / 1000),
+          permissions: [],
+          entitlements: {},
         });
       });
     });

@@ -56,7 +56,8 @@
 │   ├── docker-compose.yml    # ローカル開発用スタック (Postgres/Redis)
 │   └── migrations/          # SQL マイグレーションファイル
 └── docs/
-    └── openapi.yaml         # API 仕様書 (ドラフト)
+    ├── openapi.yaml         # API 仕様書 (ドラフト)
+    └── data-retention-policy.md # 保持期間・匿名化・自動削除ポリシー
 ```
 
 ---
@@ -117,6 +118,12 @@ pnpm verify:lint
 
 # 依存脆弱性チェック（任意）
 pnpm verify:security
+
+# 保持期間バッチ（dry-run）
+pnpm retention:dry-run
+
+# 保持期間バッチ（実行）
+pnpm retention:run
 ```
 
 ---
@@ -125,10 +132,10 @@ pnpm verify:security
 
 詳細計画: [実装計画書](docs/implementation-plan.md)
 
-- [ ] **トランザクションの整合性**: サインアップやパスワードリセット等の複数ステップフローを DB トランザクションで保護。
-- [ ] **JWKS サポート**: 公開鍵の配信および自動回転の実装。
-- [ ] **設定の外部化**: セッションの有効期限やハッシュパラメータを環境変数に移行。
-- [ ] **OIDC 統合の強化**: Hono ルートと `oidc-provider` のディスカバリロジックの連携強化。
+- [x] **トランザクションの整合性**: サインアップやパスワードリセット等の複数ステップフローを DB トランザクションで保護。
+- [x] **JWKS サポート**: 公開鍵の配信および自動回転の実装。
+- [x] **設定の外部化**: セッションの有効期限やハッシュパラメータを環境変数に移行。
+- [x] **OIDC 統合の強化**: Hono ルートと `oidc-provider` のディスカバリロジックの連携強化。
 
 ---
 

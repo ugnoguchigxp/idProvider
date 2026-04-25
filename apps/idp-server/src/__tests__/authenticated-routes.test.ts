@@ -24,6 +24,7 @@ describe("Authenticated Routes (via buildApp)", () => {
         verifyMfa: vi.fn(),
         changePassword: vi.fn(),
         authorizationCheck: vi.fn(),
+        entitlementCheck: vi.fn(),
         listSessions: vi.fn(),
         revokeSession: vi.fn(),
         revokeAllSessions: vi.fn(),
@@ -33,6 +34,9 @@ describe("Authenticated Routes (via buildApp)", () => {
       },
       rateLimiter: {
         consume: vi.fn().mockResolvedValue({ allowed: true, remaining: 10 }),
+      },
+      keyStore: {
+        getPublicJwks: vi.fn().mockResolvedValue({ keys: [] }),
       },
       logger: {
         info: vi.fn(),
@@ -104,6 +108,22 @@ describe("Authenticated Routes (via buildApp)", () => {
       method: "POST",
       headers: { ...authHeader, "Content-Type": "application/json" },
       body: JSON.stringify({ action: "read", resource: "file" }),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("POST /v1/entitlements/check works", async () => {
+    deps.authService.entitlementCheck.mockResolvedValue({
+      granted: true,
+      key: "api_access",
+      source: "user",
+      value: true,
+      reason: "enabled",
+    });
+    const res = await app.request("/v1/entitlements/check", {
+      method: "POST",
+      headers: { ...authHeader, "Content-Type": "application/json" },
+      body: JSON.stringify({ key: "api_access" }),
     });
     expect(res.status).toBe(200);
   });

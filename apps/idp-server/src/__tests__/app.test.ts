@@ -25,6 +25,9 @@ const deps = {
   rateLimiter: {
     consume: async () => ({ allowed: true, remaining: 10 }),
   },
+  keyStore: {
+    getPublicJwks: async () => ({ keys: [] }),
+  },
   authService: {
     signup: async () => ({
       userId: crypto.randomUUID(),
@@ -69,6 +72,12 @@ const deps = {
     verifyMfa: async () => undefined,
     changePassword: async () => undefined,
     authorizationCheck: async () => ({ allowed: false, permissionKey: "x:y" }),
+    entitlementCheck: async () => ({
+      granted: true,
+      key: "api_access",
+      source: "user",
+      reason: "enabled",
+    }),
     listSessions: async () => [],
     revokeSession: async () => undefined,
     revokeAllSessions: async () => undefined,

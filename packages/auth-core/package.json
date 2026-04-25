@@ -19,9 +19,11 @@
     "@idp/shared": "workspace:*",
     "argon2": "^0.43.0",
     "drizzle-orm": "^0.44.0",
+    "ioredis": "^5.10.1",
     "otplib": "^12.0.1"
   },
   "devDependencies": {
+    "@types/ioredis": "^5.0.0",
     "@types/node": "^24.0.0",
     "@vitest/coverage-v8": "^3.1.2",
     "eslint": "^9.25.0",

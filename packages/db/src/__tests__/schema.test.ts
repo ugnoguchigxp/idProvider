@@ -5,5 +5,6 @@ describe("db schema", () => {
   it("exports tables", () => {
     expect(schema.users).toBeDefined();
     expect(schema.userEmails).toBeDefined();
+    expect(schema.legalHolds).toBeDefined();
   });
 });

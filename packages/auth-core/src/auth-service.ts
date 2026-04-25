@@ -2,10 +2,16 @@ import { createHash, randomBytes } from "node:crypto";
 import {
   auditLogs,
   type DbClient,
+  type DbTransaction,
   emailVerificationTokens,
+  entitlements,
   externalIdentities,
+  groupMemberships,
+  groupRoles,
+  groups,
   loginAttempts,
   mfaFactors,
+  organizations,
   passwordResetTokens,
   permissions,
   rolePermissions,
@@ -15,14 +21,34 @@ import {
   userRoles,
   userSessions,
   users,
+  withTransaction,
 } from "@idp/db";
 import { ApiError } from "@idp/shared";
 import argon2 from "argon2";
 import { and, desc, eq, gt, isNull, or } from "drizzle-orm";
 import { authenticator } from "otplib";
 
-const ACCESS_TOKEN_MINUTES = 15;
-const REFRESH_TOKEN_DAYS = 30;
+export type AuthServiceOptions = {
+  accessTokenTtlSeconds: number;
+  refreshTokenTtlSeconds: number;
+  argon2: {
+    memoryCost: number;
+    timeCost: number;
+    parallelism: number;
+  };
+  mfaIssuer: string;
+};
+
+const DEFAULT_OPTIONS: AuthServiceOptions = {
+  accessTokenTtlSeconds: 15 * 60,
+  refreshTokenTtlSeconds: 30 * 24 * 60 * 60,
+  argon2: {
+    memoryCost: 19456,
+    timeCost: 2,
+    parallelism: 1,
+  },
+  mfaIssuer: "gxp-idProvider",
+};
 
 const hashOpaqueToken = (token: string): string =>
   createHash("sha256").update(token, "utf8").digest("hex");
@@ -42,31 +68,68 @@ type SessionTokenBundle = {
   refreshToken: string;
   accessExpiresAt: string;
   refreshExpiresAt: string;
+  tokenClaims: AuthorizationSnapshot;
 };
 
+type EntitlementValue = Record<string, unknown> | boolean;
+
+export type AuthorizationSnapshot = {
+  permissions: string[];
+  entitlements: Record<string, EntitlementValue>;
+};
+
+type EntitlementScope = "user" | "group" | "organization" | "none";
+
 export class AuthService {
-  constructor(private readonly db: DbClient) {}
+  private readonly options: AuthServiceOptions;
+
+  constructor(
+    private readonly db: DbClient,
+    options?: Partial<AuthServiceOptions>,
+  ) {
+    this.options = {
+      ...DEFAULT_OPTIONS,
+      ...options,
+      argon2: {
+        ...DEFAULT_OPTIONS.argon2,
+        ...(options?.argon2 ?? {}),
+      },
+    };
+  }
+
+  private async runInTransaction<T>(
+    handler: (tx: DbTransaction | DbClient) => Promise<T>,
+  ): Promise<T> {
+    if (typeof this.db.transaction === "function") {
+      return withTransaction(this.db, handler);
+    }
+    return handler(this.db);
+  }
 
   private async writeSecurityEvent(
     eventType: string,
     userId: string | null,
     payload: Record<string, unknown>,
+    db: DbTransaction | DbClient = this.db,
   ) {
-    await this.db.insert(securityEvents).values({
+    await db.insert(securityEvents).values({
       eventType,
       userId,
       payload,
     });
   }
 
-  private async writeAuditLog(input: {
-    actorUserId: string | null;
-    action: string;
-    resourceType: string;
-    resourceId?: string;
-    payload: Record<string, unknown>;
-  }) {
-    await this.db.insert(auditLogs).values({
+  private async writeAuditLog(
+    input: {
+      actorUserId: string | null;
+      action: string;
+      resourceType: string;
+      resourceId?: string;
+      payload: Record<string, unknown>;
+    },
+    db: DbTransaction | DbClient = this.db,
+  ) {
+    await db.insert(auditLogs).values({
       actorUserId: input.actorUserId,
       action: input.action,
       resourceType: input.resourceType,
@@ -75,21 +138,233 @@ export class AuthService {
     });
   }
 
+  private isEntitlementActive(expiresAt: Date | null): boolean {
+    return expiresAt === null || expiresAt > new Date();
+  }
+
+  private normalizeEntitlementValue(value: unknown): EntitlementValue {
+    if (typeof value === "boolean") {
+      return value;
+    }
+
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
+    }
+
+    return { value };
+  }
+
+  private async listPermissionKeys(
+    userId: string,
+    context?: { organizationId?: string; groupId?: string },
+  ): Promise<string[]> {
+    const directRows = await this.db
+      .select({ key: permissions.key })
+      .from(userRoles)
+      .innerJoin(rolePermissions, eq(userRoles.roleId, rolePermissions.roleId))
+      .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
+      .where(eq(userRoles.userId, userId));
+
+    const hasGroupFilter = Boolean(context?.groupId || context?.organizationId);
+    const groupRows = await this.db
+      .select({ key: permissions.key })
+      .from(groupMemberships)
+      .innerJoin(groups, eq(groupMemberships.groupId, groups.id))
+      .innerJoin(groupRoles, eq(groups.id, groupRoles.groupId))
+      .innerJoin(rolePermissions, eq(groupRoles.roleId, rolePermissions.roleId))
+      .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
+      .where(
+        and(
+          eq(groupMemberships.userId, userId),
+          hasGroupFilter && context?.groupId
+            ? eq(groups.id, context.groupId)
+            : undefined,
+          hasGroupFilter && context?.organizationId
+            ? eq(groups.organizationId, context.organizationId)
+            : undefined,
+        ),
+      );
+
+    return [...new Set([...directRows, ...groupRows].map((row) => row.key))];
+  }
+
+  private async resolveEntitlementForKey(input: {
+    userId: string;
+    key: string;
+    organizationId?: string;
+    groupId?: string;
+  }): Promise<{ value: EntitlementValue; scope: EntitlementScope } | null> {
+    const now = new Date();
+    const isActive = or(
+      isNull(entitlements.expiresAt),
+      gt(entitlements.expiresAt, now),
+    );
+
+    const userRows = await this.db
+      .select({
+        value: entitlements.value,
+        enabled: entitlements.enabled,
+        expiresAt: entitlements.expiresAt,
+      })
+      .from(entitlements)
+      .where(
+        and(
+          eq(entitlements.key, input.key),
+          eq(entitlements.userId, input.userId),
+          eq(entitlements.enabled, true),
+          isActive,
+        ),
+      )
+      .orderBy(desc(entitlements.createdAt))
+      .limit(1);
+    const userEntitlement = userRows[0];
+    if (
+      userEntitlement &&
+      this.isEntitlementActive(userEntitlement.expiresAt)
+    ) {
+      return {
+        value: this.normalizeEntitlementValue(userEntitlement.value),
+        scope: "user",
+      };
+    }
+
+    const groupRows = await this.db
+      .select({
+        value: entitlements.value,
+        enabled: entitlements.enabled,
+        expiresAt: entitlements.expiresAt,
+      })
+      .from(entitlements)
+      .innerJoin(groups, eq(entitlements.groupId, groups.id))
+      .innerJoin(groupMemberships, eq(groups.id, groupMemberships.groupId))
+      .where(
+        and(
+          eq(entitlements.key, input.key),
+          eq(groupMemberships.userId, input.userId),
+          eq(entitlements.enabled, true),
+          isActive,
+          input.groupId ? eq(groups.id, input.groupId) : undefined,
+          input.organizationId
+            ? eq(groups.organizationId, input.organizationId)
+            : undefined,
+        ),
+      )
+      .orderBy(desc(entitlements.createdAt))
+      .limit(1);
+    const groupEntitlement = groupRows[0];
+    if (
+      groupEntitlement &&
+      this.isEntitlementActive(groupEntitlement.expiresAt)
+    ) {
+      return {
+        value: this.normalizeEntitlementValue(groupEntitlement.value),
+        scope: "group",
+      };
+    }
+
+    if (!input.organizationId) {
+      return null;
+    }
+
+    const organizationMembershipRows = await this.db
+      .select({ organizationId: groups.organizationId })
+      .from(groupMemberships)
+      .innerJoin(groups, eq(groupMemberships.groupId, groups.id))
+      .where(
+        and(
+          eq(groupMemberships.userId, input.userId),
+          eq(groups.organizationId, input.organizationId),
+        ),
+      )
+      .limit(1);
+    if (organizationMembershipRows.length === 0) {
+      return null;
+    }
+
+    const organizationRows = await this.db
+      .select({
+        value: entitlements.value,
+        enabled: entitlements.enabled,
+        expiresAt: entitlements.expiresAt,
+      })
+      .from(entitlements)
+      .innerJoin(
+        organizations,
+        eq(entitlements.organizationId, organizations.id),
+      )
+      .where(
+        and(
+          eq(entitlements.key, input.key),
+          eq(entitlements.enabled, true),
+          isActive,
+          eq(organizations.id, input.organizationId),
+        ),
+      )
+      .orderBy(desc(entitlements.createdAt))
+      .limit(1);
+    const organizationEntitlement = organizationRows[0];
+    if (
+      organizationEntitlement &&
+      this.isEntitlementActive(organizationEntitlement.expiresAt)
+    ) {
+      return {
+        value: this.normalizeEntitlementValue(organizationEntitlement.value),
+        scope: "organization",
+      };
+    }
+
+    return null;
+  }
+
+  async getAuthorizationSnapshot(
+    userId: string,
+    context?: { organizationId?: string; groupId?: string },
+  ): Promise<AuthorizationSnapshot> {
+    const permissionsResolved = await this.listPermissionKeys(userId, context);
+
+    const entitlementRows = await this.db
+      .select({ key: entitlements.key })
+      .from(entitlements)
+      .where(eq(entitlements.enabled, true));
+    const uniqueKeys = [...new Set(entitlementRows.map((row) => row.key))];
+
+    const entitlementMap: Record<string, EntitlementValue> = {};
+    for (const key of uniqueKeys) {
+      const resolved = await this.resolveEntitlementForKey({
+        userId,
+        key,
+        ...(context?.organizationId
+          ? { organizationId: context.organizationId }
+          : {}),
+        ...(context?.groupId ? { groupId: context.groupId } : {}),
+      });
+      if (resolved) {
+        entitlementMap[key] = resolved.value;
+      }
+    }
+
+    return {
+      permissions: permissionsResolved,
+      entitlements: entitlementMap,
+    };
+  }
+
   private async createSession(
     userId: string,
     ipAddress: string | null,
     userAgent: string | null,
+    db: DbTransaction | DbClient = this.db,
   ): Promise<SessionTokenBundle> {
     const accessToken = createOpaqueToken("at");
     const refreshToken = createOpaqueToken("rt");
     const accessExpiresAt = new Date(
-      Date.now() + ACCESS_TOKEN_MINUTES * 60_000,
+      Date.now() + this.options.accessTokenTtlSeconds * 1000,
     );
     const refreshExpiresAt = new Date(
-      Date.now() + REFRESH_TOKEN_DAYS * 24 * 60_000 * 60,
+      Date.now() + this.options.refreshTokenTtlSeconds * 1000,
     );
 
-    await this.db.insert(userSessions).values({
+    await db.insert(userSessions).values({
       userId,
       accessTokenHash: hashOpaqueToken(accessToken),
       refreshTokenHash: hashOpaqueToken(refreshToken),
@@ -99,11 +374,14 @@ export class AuthService {
       refreshExpiresAt: refreshExpiresAt,
     });
 
+    const tokenClaims = await this.getAuthorizationSnapshot(userId);
+
     return {
       accessToken,
       refreshToken,
       accessExpiresAt: accessExpiresAt.toISOString(),
       refreshExpiresAt: refreshExpiresAt.toISOString(),
+      tokenClaims,
     };
   }
 
@@ -114,65 +392,79 @@ export class AuthService {
     ipAddress: string | null;
   }) {
     try {
-      const inserted = await this.db
-        .insert(users)
-        .values({ status: "active" })
-        .returning({ id: users.id });
-      const user = inserted[0];
-      if (!user) {
-        throw new ApiError(500, "user_create_failed", "Failed to create user");
-      }
+      return await this.runInTransaction(async (tx) => {
+        const inserted = await tx
+          .insert(users)
+          .values({ status: "active" })
+          .returning({ id: users.id });
+        const user = inserted[0];
+        if (!user) {
+          throw new ApiError(
+            500,
+            "user_create_failed",
+            "Failed to create user",
+          );
+        }
 
-      await this.db.insert(userEmails).values({
-        userId: user.id,
-        email: input.email,
-        isPrimary: true,
-        isVerified: false,
-      });
-
-      const passwordHash = await argon2.hash(input.password, {
-        type: argon2.argon2id,
-        memoryCost: 19456,
-        timeCost: 2,
-        parallelism: 1,
-      });
-
-      await this.db
-        .insert(userPasswords)
-        .values({ userId: user.id, passwordHash });
-
-      const verificationToken = createOpaqueToken("ev");
-      const verificationHash = hashOpaqueToken(verificationToken);
-      const verificationExpiresAt = new Date(Date.now() + 24 * 60 * 60_000);
-
-      await this.db.insert(emailVerificationTokens).values({
-        userId: user.id,
-        tokenHash: verificationHash,
-        expiresAt: verificationExpiresAt,
-      });
-
-      await this.writeSecurityEvent("signup.created", user.id, {
-        email: input.email,
-        ipAddress: input.ipAddress,
-        displayName: input.displayName,
-      });
-
-      await this.writeAuditLog({
-        actorUserId: user.id,
-        action: "user.signup",
-        resourceType: "user",
-        resourceId: user.id,
-        payload: {
+        await tx.insert(userEmails).values({
+          userId: user.id,
           email: input.email,
-          displayName: input.displayName,
-        },
-      });
+          isPrimary: true,
+          isVerified: false,
+        });
 
-      return {
-        userId: user.id,
-        email: input.email,
-        verificationToken,
-      };
+        const passwordHash = await argon2.hash(input.password, {
+          type: argon2.argon2id,
+          memoryCost: this.options.argon2.memoryCost,
+          timeCost: this.options.argon2.timeCost,
+          parallelism: this.options.argon2.parallelism,
+        });
+
+        await tx
+          .insert(userPasswords)
+          .values({ userId: user.id, passwordHash });
+
+        const verificationToken = createOpaqueToken("ev");
+        const verificationHash = hashOpaqueToken(verificationToken);
+        const verificationExpiresAt = new Date(Date.now() + 24 * 60 * 60_000);
+
+        await tx.insert(emailVerificationTokens).values({
+          userId: user.id,
+          tokenHash: verificationHash,
+          expiresAt: verificationExpiresAt,
+        });
+
+        await this.writeSecurityEvent(
+          "signup.created",
+          user.id,
+          {
+            email: input.email,
+            ipAddress: input.ipAddress,
+            displayName: input.displayName,
+          },
+          tx,
+        );
+
+        await this.writeAuditLog(
+          {
+            actorUserId: user.id,
+            action: "user.signup",
+            resourceType: "user",
+            resourceId: user.id,
+            payload: {
+              email: input.email,
+              displayName: input.displayName,
+            },
+          },
+          tx,
+        );
+
+        return {
+          userId: user.id,
+          email: input.email,
+          verificationToken,
+        };
+      });
     } catch (error: unknown) {
       if (
         typeof error === "object" &&
@@ -331,84 +623,97 @@ export class AuthService {
 
   async refresh(refreshToken: string) {
     const tokenHash = hashOpaqueToken(refreshToken);
-    const rows = await this.db
-      .select({
-        sessionId: userSessions.id,
-        userId: userSessions.userId,
-        refreshExpiresAt: userSessions.refreshExpiresAt,
-      })
-      .from(userSessions)
-      .where(
-        and(
-          eq(userSessions.refreshTokenHash, tokenHash),
-          isNull(userSessions.revokedAt),
-          gt(userSessions.refreshExpiresAt, new Date()),
-        ),
-      )
-      .limit(1);
+    return this.runInTransaction(async (tx) => {
+      const rows = await tx
+        .select({
+          sessionId: userSessions.id,
+          userId: userSessions.userId,
+          refreshExpiresAt: userSessions.refreshExpiresAt,
+        })
+        .from(userSessions)
+        .where(
+          and(
+            eq(userSessions.refreshTokenHash, tokenHash),
+            isNull(userSessions.revokedAt),
+            gt(userSessions.refreshExpiresAt, new Date()),
+          ),
+        )
+        .limit(1);
 
-    const session = rows[0];
-    if (!session) {
-      await this.writeSecurityEvent("refresh_token.reuse_detected", null, {
-        refreshTokenHash: tokenHash,
-      });
-      throw new ApiError(401, "invalid_refresh_token", "Invalid refresh token");
-    }
+      const session = rows[0];
+      if (!session) {
+        await this.writeSecurityEvent(
+          "refresh_token.reuse_detected",
+          null,
+          { refreshTokenHash: tokenHash },
+          tx,
+        );
+        throw new ApiError(
+          401,
+          "invalid_refresh_token",
+          "Invalid refresh token",
+        );
+      }
 
-    const nextAccessToken = createOpaqueToken("at");
-    const nextRefreshToken = createOpaqueToken("rt");
-    const accessExpiresAt = new Date(
-      Date.now() + ACCESS_TOKEN_MINUTES * 60_000,
-    );
-    const refreshExpiresAt = new Date(
-      Date.now() + REFRESH_TOKEN_DAYS * 24 * 60_000 * 60,
-    );
+      const nextAccessToken = createOpaqueToken("at");
+      const nextRefreshToken = createOpaqueToken("rt");
+      const accessExpiresAt = new Date(
+        Date.now() + this.options.accessTokenTtlSeconds * 1000,
+      );
+      const refreshExpiresAt = new Date(
+        Date.now() + this.options.refreshTokenTtlSeconds * 1000,
+      );
 
-    const updated = await this.db
-      .update(userSessions)
-      .set({
-        accessTokenHash: hashOpaqueToken(nextAccessToken),
-        refreshTokenHash: hashOpaqueToken(nextRefreshToken),
-        expiresAt: accessExpiresAt,
-        refreshExpiresAt,
-        lastSeenAt: new Date(),
-      })
-      .where(
-        and(
-          eq(userSessions.id, session.sessionId),
-          eq(userSessions.refreshTokenHash, tokenHash),
-        ),
-      )
-      .returning({ id: userSessions.id });
-
-    if (updated.length === 0) {
-      await this.db
+      const updated = await tx
         .update(userSessions)
-        .set({ revokedAt: new Date() })
-        .where(eq(userSessions.id, session.sessionId));
+        .set({
+          accessTokenHash: hashOpaqueToken(nextAccessToken),
+          refreshTokenHash: hashOpaqueToken(nextRefreshToken),
+          expiresAt: accessExpiresAt,
+          refreshExpiresAt,
+          lastSeenAt: new Date(),
+        })
+        .where(
+          and(
+            eq(userSessions.id, session.sessionId),
+            eq(userSessions.refreshTokenHash, tokenHash),
+          ),
+        )
+        .returning({ id: userSessions.id });
 
-      await this.writeSecurityEvent(
-        "refresh_token.reuse_detected",
-        session.userId,
-        {
-          sessionId: session.sessionId,
-        },
-      );
+      if (updated.length === 0) {
+        await tx
+          .update(userSessions)
+          .set({ revokedAt: new Date() })
+          .where(eq(userSessions.id, session.sessionId));
 
-      throw new ApiError(
-        401,
-        "invalid_refresh_token",
-        "Refresh token reuse detected",
-      );
-    }
+        await this.writeSecurityEvent(
+          "refresh_token.reuse_detected",
+          session.userId,
+          {
+            sessionId: session.sessionId,
+          },
+          tx,
+        );
 
-    return {
-      userId: session.userId,
-      accessToken: nextAccessToken,
-      refreshToken: nextRefreshToken,
-      accessExpiresAt: accessExpiresAt.toISOString(),
-      refreshExpiresAt: refreshExpiresAt.toISOString(),
-    };
+        throw new ApiError(
+          401,
+          "invalid_refresh_token",
+          "Refresh token reuse detected",
+        );
+      }
+
+      const tokenClaims = await this.getAuthorizationSnapshot(session.userId);
+
+      return {
+        userId: session.userId,
+        accessToken: nextAccessToken,
+        refreshToken: nextRefreshToken,
+        accessExpiresAt: accessExpiresAt.toISOString(),
+        refreshExpiresAt: refreshExpiresAt.toISOString(),
+        tokenClaims,
+      };
+    });
   }
 
   async getMe(userId: string) {
@@ -462,9 +767,9 @@ export class AuthService {
     await this.verifyCurrentPassword(input.userId, input.currentPassword);
     const passwordHash = await argon2.hash(input.newPassword, {
       type: argon2.argon2id,
-      memoryCost: 19456,
-      timeCost: 2,
-      parallelism: 1,
+      memoryCost: this.options.argon2.memoryCost,
+      timeCost: this.options.argon2.timeCost,
+      parallelism: this.options.argon2.parallelism,
     });
 
     await this.db
@@ -556,43 +861,48 @@ export class AuthService {
 
   async confirmEmailVerification(token: string) {
     const tokenHash = hashOpaqueToken(token);
-    const records = await this.db
-      .select({
-        id: emailVerificationTokens.id,
-        userId: emailVerificationTokens.userId,
-      })
-      .from(emailVerificationTokens)
-      .where(
-        and(
-          eq(emailVerificationTokens.tokenHash, tokenHash),
-          isNull(emailVerificationTokens.consumedAt),
-          gt(emailVerificationTokens.expiresAt, new Date()),
-        ),
-      )
-      .limit(1);
+    await this.runInTransaction(async (tx) => {
+      const records = await tx
+        .select({
+          id: emailVerificationTokens.id,
+          userId: emailVerificationTokens.userId,
+        })
+        .from(emailVerificationTokens)
+        .where(
+          and(
+            eq(emailVerificationTokens.tokenHash, tokenHash),
+            isNull(emailVerificationTokens.consumedAt),
+            gt(emailVerificationTokens.expiresAt, new Date()),
+          ),
+        )
+        .limit(1);
 
-    const row = records[0];
-    if (!row) {
-      throw new ApiError(
-        400,
-        "invalid_verification_token",
-        "Invalid or expired verification token",
-      );
-    }
+      const row = records[0];
+      if (!row) {
+        throw new ApiError(
+          400,
+          "invalid_verification_token",
+          "Invalid or expired verification token",
+        );
+      }
 
-    await this.db
-      .update(userEmails)
-      .set({ isVerified: true })
-      .where(
-        and(eq(userEmails.userId, row.userId), eq(userEmails.isPrimary, true)),
-      );
+      await tx
+        .update(userEmails)
+        .set({ isVerified: true })
+        .where(
+          and(
+            eq(userEmails.userId, row.userId),
+            eq(userEmails.isPrimary, true),
+          ),
+        );
 
-    await this.db
-      .update(emailVerificationTokens)
-      .set({ consumedAt: new Date() })
-      .where(eq(emailVerificationTokens.id, row.id));
+      await tx
+        .update(emailVerificationTokens)
+        .set({ consumedAt: new Date() })
+        .where(eq(emailVerificationTokens.id, row.id));
 
-    await this.writeSecurityEvent("email.verified", row.userId, {});
+      await this.writeSecurityEvent("email.verified", row.userId, {}, tx);
+    });
   }
 
   async confirmPasswordReset(input: {
@@ -600,59 +910,66 @@ export class AuthService {
     newPassword: string;
   }) {
     const tokenHash = hashOpaqueToken(input.resetToken);
-    const result = await this.db
-      .select({
-        id: passwordResetTokens.id,
-        userId: passwordResetTokens.userId,
-      })
-      .from(passwordResetTokens)
-      .where(
-        and(
-          eq(passwordResetTokens.tokenHash, tokenHash),
-          isNull(passwordResetTokens.consumedAt),
-          gt(passwordResetTokens.expiresAt, new Date()),
-        ),
-      )
-      .limit(1);
+    await this.runInTransaction(async (tx) => {
+      const result = await tx
+        .select({
+          id: passwordResetTokens.id,
+          userId: passwordResetTokens.userId,
+        })
+        .from(passwordResetTokens)
+        .where(
+          and(
+            eq(passwordResetTokens.tokenHash, tokenHash),
+            isNull(passwordResetTokens.consumedAt),
+            gt(passwordResetTokens.expiresAt, new Date()),
+          ),
+        )
+        .limit(1);
 
-    const token = result[0];
-    if (!token) {
-      throw new ApiError(
-        400,
-        "invalid_reset_token",
-        "Invalid or expired reset token",
+      const token = result[0];
+      if (!token) {
+        throw new ApiError(
+          400,
+          "invalid_reset_token",
+          "Invalid or expired reset token",
+        );
+      }
+
+      const passwordHash = await argon2.hash(input.newPassword, {
+        type: argon2.argon2id,
+        memoryCost: this.options.argon2.memoryCost,
+        timeCost: this.options.argon2.timeCost,
+        parallelism: this.options.argon2.parallelism,
+      });
+
+      await tx
+        .update(userPasswords)
+        .set({ passwordHash, updatedAt: new Date() })
+        .where(eq(userPasswords.userId, token.userId));
+
+      await tx
+        .update(userSessions)
+        .set({ revokedAt: new Date() })
+        .where(
+          and(
+            eq(userSessions.userId, token.userId),
+            isNull(userSessions.revokedAt),
+          ),
+        );
+
+      await tx
+        .update(passwordResetTokens)
+        .set({ consumedAt: new Date() })
+        .where(eq(passwordResetTokens.id, token.id));
+
+      await this.writeSecurityEvent(
+        "password.changed",
+        token.userId,
+        {
+          reason: "password_reset",
+        },
+        tx,
       );
-    }
-
-    const passwordHash = await argon2.hash(input.newPassword, {
-      type: argon2.argon2id,
-      memoryCost: 19456,
-      timeCost: 2,
-      parallelism: 1,
-    });
-
-    await this.db
-      .update(userPasswords)
-      .set({ passwordHash, updatedAt: new Date() })
-      .where(eq(userPasswords.userId, token.userId));
-
-    await this.db
-      .update(userSessions)
-      .set({ revokedAt: new Date() })
-      .where(
-        and(
-          eq(userSessions.userId, token.userId),
-          isNull(userSessions.revokedAt),
-        ),
-      );
-
-    await this.db
-      .update(passwordResetTokens)
-      .set({ consumedAt: new Date() })
-      .where(eq(passwordResetTokens.id, token.id));
-
-    await this.writeSecurityEvent("password.changed", token.userId, {
-      reason: "password_reset",
     });
   }
 
@@ -706,11 +1023,15 @@ export class AuthService {
       return { active: false as const };
     }
 
+    const tokenClaims = await this.getAuthorizationSnapshot(row.userId);
+
     return {
       active: true as const,
       sub: row.userId,
       sid: row.sessionId,
       exp: Math.floor(row.expiresAt.getTime() / 1000),
+      permissions: tokenClaims.permissions,
+      entitlements: tokenClaims.entitlements,
     };
   }
 
@@ -767,24 +1088,79 @@ export class AuthService {
     userId: string;
     action: string;
     resource: string;
+    organizationId?: string;
+    groupId?: string;
   }) {
     const permissionKey = `${input.resource}:${input.action}`;
-    const result = await this.db
-      .select({ permissionId: permissions.id })
-      .from(userRoles)
-      .innerJoin(rolePermissions, eq(userRoles.roleId, rolePermissions.roleId))
-      .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
-      .where(
-        and(
-          eq(userRoles.userId, input.userId),
-          eq(permissions.key, permissionKey),
-        ),
-      )
-      .limit(1);
+    const permissionKeys = await this.listPermissionKeys(input.userId, {
+      ...(input.organizationId ? { organizationId: input.organizationId } : {}),
+      ...(input.groupId ? { groupId: input.groupId } : {}),
+    });
+    const allowed = permissionKeys.includes(permissionKey);
 
     return {
-      allowed: result.length > 0,
+      allowed,
       permissionKey,
+      source: allowed ? "role" : "none",
+    };
+  }
+
+  async entitlementCheck(input: {
+    userId: string;
+    key: string;
+    organizationId?: string;
+    groupId?: string;
+    quantity?: number;
+  }) {
+    const resolved = await this.resolveEntitlementForKey({
+      userId: input.userId,
+      key: input.key,
+      ...(input.organizationId ? { organizationId: input.organizationId } : {}),
+      ...(input.groupId ? { groupId: input.groupId } : {}),
+    });
+
+    if (!resolved) {
+      return {
+        granted: false,
+        key: input.key,
+        source: "none" as EntitlementScope,
+        reason: "not_found",
+      };
+    }
+
+    const value = resolved.value;
+    if (typeof value === "boolean") {
+      return {
+        granted: value,
+        key: input.key,
+        source: resolved.scope,
+        value,
+        reason: value ? "enabled" : "disabled",
+      };
+    }
+
+    const quantityLimit = typeof value.max === "number" ? value.max : undefined;
+    if (
+      typeof quantityLimit === "number" &&
+      typeof input.quantity === "number"
+    ) {
+      const granted = input.quantity <= quantityLimit;
+      return {
+        granted,
+        key: input.key,
+        source: resolved.scope,
+        value,
+        reason: granted ? "within_limit" : "limit_exceeded",
+      };
+    }
+
+    const granted = typeof value.enabled === "boolean" ? value.enabled : true;
+    return {
+      granted,
+      key: input.key,
+      source: resolved.scope,
+      value,
+      reason: granted ? "enabled" : "disabled",
     };
   }
 
@@ -808,7 +1184,7 @@ export class AuthService {
     const account = await this.getMe(userId);
     const provisioningUri = authenticator.keyuri(
       account.email,
-      "gxp-idProvider",
+      this.options.mfaIssuer,
       secret,
     );
 
@@ -886,52 +1262,72 @@ export class AuthService {
       );
     }
 
-    if (!mapped) {
-      await this.db.insert(externalIdentities).values({
-        userId: input.userId,
-        provider: "google",
-        providerSubject: input.providerSubject,
-        email: input.email,
-        isEmailVerified: true,
-      });
-    }
+    await this.runInTransaction(async (tx) => {
+      if (!mapped) {
+        await tx.insert(externalIdentities).values({
+          userId: input.userId,
+          provider: "google",
+          providerSubject: input.providerSubject,
+          email: input.email,
+          isEmailVerified: true,
+        });
+      }
 
-    await this.writeSecurityEvent("identity.google.linked", input.userId, {
-      providerSubject: input.providerSubject,
-      email: input.email,
-    });
+      await this.writeSecurityEvent(
+        "identity.google.linked",
+        input.userId,
+        {
+          providerSubject: input.providerSubject,
+          email: input.email,
+        },
+        tx,
+      );
 
-    await this.writeAuditLog({
-      actorUserId: input.userId,
-      action: "identity.google.link",
-      resourceType: "external_identity",
-      resourceId: input.providerSubject,
-      payload: {
-        email: input.email,
-      },
+      await this.writeAuditLog(
+        {
+          actorUserId: input.userId,
+          action: "identity.google.link",
+          resourceType: "external_identity",
+          resourceId: input.providerSubject,
+          payload: {
+            email: input.email,
+          },
+        },
+        tx,
+      );
     });
   }
 
   async unlinkGoogleIdentity(userId: string, providerSubject: string) {
-    await this.db
-      .delete(externalIdentities)
-      .where(
-        and(
-          eq(externalIdentities.userId, userId),
-          eq(externalIdentities.provider, "google"),
-          eq(externalIdentities.providerSubject, providerSubject),
-        ),
-      );
+    await this.runInTransaction(async (tx) => {
+      await tx
+        .delete(externalIdentities)
+        .where(
+          and(
+            eq(externalIdentities.userId, userId),
+            eq(externalIdentities.provider, "google"),
+            eq(externalIdentities.providerSubject, providerSubject),
+          ),
+        );
 
-    await this.writeSecurityEvent("identity.google.unlinked", userId, {
-      providerSubject,
-    });
-    await this.writeAuditLog({
-      actorUserId: userId,
-      action: "identity.google.unlink",
-      resourceType: "external_identity",
-      resourceId: providerSubject,
-      payload: {},
+      await this.writeSecurityEvent(
+        "identity.google.unlinked",
+        userId,
+        {
+          providerSubject,
+        },
+        tx,
+      );
+      await this.writeAuditLog(
+        {
+          actorUserId: userId,
+          action: "identity.google.unlink",
+          resourceType: "external_identity",
+          resourceId: providerSubject,
+          payload: {},
+        },
+        tx,
+      );
     });
   }
 }

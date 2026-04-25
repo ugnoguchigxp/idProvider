@@ -3,9 +3,34 @@ import { RateLimiter } from "../core/rate-limiter.js";
 
 describe("RateLimiter", () => {
   let rateLimiter: RateLimiter;
+  let state: { count: number; expiresAt: number };
+  let redisMock: any;
 
   beforeEach(() => {
-    rateLimiter = new RateLimiter();
+    state = { count: 0, expiresAt: 0 };
+    redisMock = {
+      eval: vi.fn(
+        async (
+          _script: string,
+          _numKeys: number,
+          _key: string,
+          windowSeconds: number,
+        ) => {
+          const now = Date.now();
+          if (state.expiresAt > 0 && now >= state.expiresAt) {
+            state.count = 0;
+            state.expiresAt = 0;
+          }
+
+          state.count += 1;
+          if (state.count === 1) {
+            state.expiresAt = now + windowSeconds * 1000;
+          }
+          return state.count;
+        },
+      ),
+    };
+    rateLimiter = new RateLimiter(redisMock);
     vi.useFakeTimers();
   });
 

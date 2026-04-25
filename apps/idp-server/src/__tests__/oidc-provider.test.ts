@@ -17,7 +17,12 @@ describe("createOidcProvider", () => {
       JWT_PRIVATE_KEY: "test-key",
     } as any;
 
-    const provider = createOidcProvider(env) as any;
+    const provider = createOidcProvider(env, { keys: [] }, {
+      getAuthorizationSnapshot: vi.fn().mockResolvedValue({
+        permissions: ["user:read"],
+        entitlements: { api_access: true },
+      }),
+    } as any) as any;
     expect(provider).toBeDefined();
 
     // Test findAccount
@@ -26,6 +31,7 @@ describe("createOidcProvider", () => {
     const claims = await account.claims();
     expect(claims.sub).toBe("sub-123");
     expect(claims.email).toBe("sub-123@example.com");
+    expect(claims.permissions).toContain("user:read");
 
     // Test pkce.required
     expect(provider.config.pkce.required()).toBe(true);

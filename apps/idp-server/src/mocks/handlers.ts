@@ -46,6 +46,12 @@ export const handlers = [
       { status: 200 },
     ),
   ),
+  http.post("http://localhost:3000/v1/entitlements/check", async () =>
+    HttpResponse.json(
+      { granted: true, key: "api_access", source: "user", value: true },
+      { status: 200 },
+    ),
+  ),
   http.post("http://localhost:3000/oauth/introspection", async () =>
     HttpResponse.json({ active: false }, { status: 200 }),
   ),

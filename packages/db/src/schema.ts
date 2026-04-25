@@ -220,6 +220,118 @@ export const userRoles = pgTable(
   }),
 );
 
+export const organizations = pgTable("organizations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  key: varchar("key", { length: 64 }).notNull().unique(),
+  name: varchar("name", { length: 128 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const groups = pgTable(
+  "groups",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    key: varchar("key", { length: 64 }).notNull(),
+    name: varchar("name", { length: 128 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    groupOrgKeyUnique: unique("groups_org_key_unique").on(
+      table.organizationId,
+      table.key,
+    ),
+    groupsOrganizationIdIdx: index("groups_organization_id_idx").on(
+      table.organizationId,
+    ),
+  }),
+);
+
+export const groupMemberships = pgTable(
+  "group_memberships",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    groupId: uuid("group_id")
+      .notNull()
+      .references(() => groups.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    groupMembershipUnique: unique("group_memberships_unique").on(
+      table.userId,
+      table.groupId,
+    ),
+    groupMembershipUserIdIdx: index("group_memberships_user_id_idx").on(
+      table.userId,
+    ),
+    groupMembershipGroupIdIdx: index("group_memberships_group_id_idx").on(
+      table.groupId,
+    ),
+  }),
+);
+
+export const groupRoles = pgTable(
+  "group_roles",
+  {
+    groupId: uuid("group_id")
+      .notNull()
+      .references(() => groups.id, { onDelete: "cascade" }),
+    roleId: uuid("role_id")
+      .notNull()
+      .references(() => roles.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    groupRoleUnique: unique("group_roles_unique").on(
+      table.groupId,
+      table.roleId,
+    ),
+  }),
+);
+
+export const entitlements = pgTable(
+  "entitlements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    key: varchar("key", { length: 128 }).notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    value: jsonb("value").notNull().default({}),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+    groupId: uuid("group_id").references(() => groups.id, {
+      onDelete: "cascade",
+    }),
+    organizationId: uuid("organization_id").references(() => organizations.id, {
+      onDelete: "cascade",
+    }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    entitlementsKeyIdx: index("entitlements_key_idx").on(table.key),
+    entitlementsUserIdIdx: index("entitlements_user_id_idx").on(table.userId),
+    entitlementsGroupIdIdx: index("entitlements_group_id_idx").on(
+      table.groupId,
+    ),
+    entitlementsOrganizationIdIdx: index("entitlements_organization_id_idx").on(
+      table.organizationId,
+    ),
+  }),
+);
+
 export const securityEvents = pgTable("security_events", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
@@ -256,3 +368,24 @@ export const signingKeys = pgTable("signing_keys", {
     .defaultNow(),
   expiresAt: timestamp("expires_at", { withTimezone: true }),
 });
+
+export const legalHolds = pgTable(
+  "legal_holds",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    reason: text("reason").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    legalHoldsUserIdIdx: index("legal_holds_user_id_idx").on(table.userId),
+    legalHoldsExpiresAtIdx: index("legal_holds_expires_at_idx").on(
+      table.expiresAt,
+    ),
+  }),
+);

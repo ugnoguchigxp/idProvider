@@ -33,6 +33,15 @@ export const authCheckRequestSchema = z.object({
   subject: z.string().min(1).optional(),
   action: z.string().min(1),
   resource: z.string().min(1),
+  organizationId: z.string().uuid().optional(),
+  groupId: z.string().uuid().optional(),
+});
+
+export const entitlementCheckRequestSchema = z.object({
+  key: z.string().min(1).max(128),
+  organizationId: z.string().uuid().optional(),
+  groupId: z.string().uuid().optional(),
+  quantity: z.coerce.number().int().positive().optional(),
 });
 
 export const mfaEnrollRequestSchema = z.object({}).passthrough();
@@ -80,6 +89,9 @@ export type SignupRequest = z.infer<typeof signupRequestSchema>;
 export type LoginRequest = z.infer<typeof loginRequestSchema>;
 export type RefreshRequest = z.infer<typeof refreshRequestSchema>;
 export type AuthCheckRequest = z.infer<typeof authCheckRequestSchema>;
+export type EntitlementCheckRequest = z.infer<
+  typeof entitlementCheckRequestSchema
+>;
 export type MfaEnrollRequest = z.infer<typeof mfaEnrollRequestSchema>;
 export type MfaVerifyRequest = z.infer<typeof mfaVerifyRequestSchema>;
 export type GoogleLinkRequest = z.infer<typeof googleLinkRequestSchema>;

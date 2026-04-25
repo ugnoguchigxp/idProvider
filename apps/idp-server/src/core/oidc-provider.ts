@@ -1,10 +1,12 @@
+import type { AuthService } from "@idp/auth-core";
 import { type Configuration, Provider } from "oidc-provider";
 import type { AppEnv } from "../config/env.js";
 
-const toBase64Url = (value: string): string =>
-  Buffer.from(value, "utf8").toString("base64url");
-
-export const createOidcProvider = (env: AppEnv): Provider => {
+export const createOidcProvider = (
+  env: AppEnv,
+  jwks: { keys: Record<string, unknown>[] },
+  authService: AuthService,
+): Provider => {
   const configuration: Configuration = {
     clients: [
       {
@@ -24,25 +26,20 @@ export const createOidcProvider = (env: AppEnv): Provider => {
       introspection: { enabled: true },
       revocation: { enabled: true },
     },
-    findAccount: async (_ctx, sub) => ({
-      accountId: sub,
-      claims: async () => ({
-        sub,
-        email: `${sub}@example.com`,
-        email_verified: true,
-      }),
-    }),
-    jwks: {
-      keys: [
-        {
-          kty: "oct",
-          k: toBase64Url(env.JWT_PRIVATE_KEY),
-          alg: "HS256",
-          use: "sig",
-          kid: "local-hs256",
-        },
-      ],
+    findAccount: async (_ctx, sub) => {
+      const snapshot = await authService.getAuthorizationSnapshot(sub);
+      return {
+        accountId: sub,
+        claims: async () => ({
+          sub,
+          email: `${sub}@example.com`,
+          email_verified: true,
+          permissions: snapshot.permissions,
+          entitlements: snapshot.entitlements,
+        }),
+      };
     },
+    jwks,
   };
 
   return new Provider(env.OIDC_ISSUER, configuration);

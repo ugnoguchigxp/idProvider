@@ -33,7 +33,7 @@ export const buildPublicRoutes = (deps: AppDependencies) => {
         const ipAddress = getIpAddress(c.req.header("x-forwarded-for"));
         const rate = await deps.rateLimiter.consume(
           `signup:${payload.email}:${ipAddress ?? "unknown"}`,
-          10,
+          deps.env.RATE_LIMIT_SIGNUP_PER_MIN,
           60,
         );
         if (!rate.allowed) {
@@ -71,7 +71,7 @@ export const buildPublicRoutes = (deps: AppDependencies) => {
         const userAgent = c.req.header("user-agent") ?? null;
         const rate = await deps.rateLimiter.consume(
           `login:${payload.email}:${ipAddress ?? "unknown"}`,
-          20,
+          deps.env.RATE_LIMIT_LOGIN_PER_MIN,
           60,
         );
         if (!rate.allowed) {
@@ -108,7 +108,7 @@ export const buildPublicRoutes = (deps: AppDependencies) => {
           token_type: "Bearer",
           access_token: result.accessToken,
           refresh_token: result.refreshToken,
-          expires_in: 60 * 15,
+          expires_in: deps.env.ACCESS_TOKEN_TTL_SECONDS,
         };
       },
     }),
