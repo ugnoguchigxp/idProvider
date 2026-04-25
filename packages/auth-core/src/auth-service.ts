@@ -37,6 +37,11 @@ export type AuthServiceOptions = {
     parallelism: number;
   };
   mfaIssuer: string;
+  onSecurityEvent?: (event: {
+    eventType: string;
+    userId: string | null;
+    payload: Record<string, unknown>;
+  }) => Promise<void> | void;
 };
 
 const DEFAULT_OPTIONS: AuthServiceOptions = {
@@ -113,6 +118,11 @@ export class AuthService {
     db: DbTransaction | DbClient = this.db,
   ) {
     await db.insert(securityEvents).values({
+      eventType,
+      userId,
+      payload,
+    });
+    await this.options.onSecurityEvent?.({
       eventType,
       userId,
       payload,

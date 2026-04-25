@@ -2,6 +2,7 @@ import "./tracing.js";
 import { serve } from "@hono/node-server";
 import {
   AuthService,
+  ConfigService,
   createRedisClient,
   KeyStoreService,
 } from "@idp/auth-core";
@@ -11,11 +12,13 @@ import { loadEnv } from "./config/env.js";
 import { createLogger } from "./core/logger.js";
 import { createOidcProvider } from "./core/oidc-provider.js";
 import { RateLimiter } from "./core/rate-limiter.js";
+import { createSecurityNotifier } from "./core/security-notifier.js";
 
 const bootstrap = async () => {
   const env = loadEnv(process.env);
   const logger = createLogger(env.LOG_LEVEL);
   const { db, pool } = createDb(env.DATABASE_URL);
+  const configService = new ConfigService(db);
   const authService = new AuthService(db, {
     accessTokenTtlSeconds: env.ACCESS_TOKEN_TTL_SECONDS,
     refreshTokenTtlSeconds: env.REFRESH_TOKEN_TTL_SECONDS,
@@ -25,6 +28,7 @@ const bootstrap = async () => {
       parallelism: env.ARGON2_PARALLELISM,
     },
     mfaIssuer: env.MFA_ISSUER,
+    onSecurityEvent: createSecurityNotifier(configService, logger),
   });
   const keyStore = new KeyStoreService(db, {
     rotationIntervalHours: env.JWKS_ROTATION_INTERVAL_HOURS,
@@ -38,6 +42,7 @@ const bootstrap = async () => {
   const app = buildApp({
     env,
     authService,
+    configService,
     keyStore,
     redis,
     logger,

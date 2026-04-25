@@ -22,6 +22,21 @@ const getIpAddress = (header: string | undefined): string | null => {
   return first ?? null;
 };
 
+const renderTemplate = (
+  template: { subject: string; body: string },
+  variables: Record<string, string>,
+) => {
+  const replace = (source: string) =>
+    source.replace(
+      /\{\{(\w+)\}\}/g,
+      (_match, key: string) => variables[key] ?? "",
+    );
+  return {
+    subject: replace(template.subject),
+    body: replace(template.body),
+  };
+};
+
 export const buildPublicRoutes = (deps: AppDependencies) => {
   const app = new Hono();
 
@@ -46,6 +61,22 @@ export const buildPublicRoutes = (deps: AppDependencies) => {
           displayName: payload.displayName,
           ipAddress,
         });
+
+        const template =
+          await deps.configService.getEmailTemplateConfig("signup_verify");
+        const message = renderTemplate(template, {
+          email: result.email,
+          token: result.verificationToken,
+        });
+        deps.logger.info(
+          {
+            event: "email.dispatch.requested",
+            type: "signup_verify",
+            to: result.email,
+            subject: message.subject,
+          },
+          "signup verification email dispatch requested",
+        );
 
         return {
           status: "accepted",
@@ -122,6 +153,23 @@ export const buildPublicRoutes = (deps: AppDependencies) => {
         const result = await deps.authService.requestEmailVerification(
           payload.email,
         );
+        if (result.token) {
+          const template =
+            await deps.configService.getEmailTemplateConfig("signup_verify");
+          const message = renderTemplate(template, {
+            email: payload.email,
+            token: result.token,
+          });
+          deps.logger.info(
+            {
+              event: "email.dispatch.requested",
+              type: "signup_verify",
+              to: payload.email,
+              subject: message.subject,
+            },
+            "email verification dispatch requested",
+          );
+        }
         return deps.env.NODE_ENV === "production"
           ? { status: "accepted" }
           : { status: "accepted", token: result.token ?? null };
@@ -147,6 +195,25 @@ export const buildPublicRoutes = (deps: AppDependencies) => {
       handler: async (_c, payload) => {
         const result = await deps.authService.requestPasswordReset(
           payload.email,
+        );
+        const template =
+          await deps.configService.getEmailTemplateConfig("password_reset");
+        const token =
+          "token" in result && typeof result.token === "string"
+            ? result.token
+            : "";
+        const message = renderTemplate(template, {
+          email: payload.email,
+          token,
+        });
+        deps.logger.info(
+          {
+            event: "email.dispatch.requested",
+            type: "password_reset",
+            to: payload.email,
+            subject: message.subject,
+          },
+          "password reset dispatch requested",
         );
         return deps.env.NODE_ENV === "production"
           ? { status: "accepted" }

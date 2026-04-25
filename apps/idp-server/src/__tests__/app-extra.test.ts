@@ -30,6 +30,21 @@ describe("Public Routes (via buildApp)", () => {
       keyStore: {
         getPublicJwks: vi.fn().mockResolvedValue({ keys: [] }),
       },
+      configService: {
+        getSocialLoginConfig: vi.fn().mockResolvedValue({
+          providerEnabled: true,
+          clientId: "",
+          clientSecret: "",
+        }),
+        getNotificationConfig: vi.fn().mockResolvedValue({
+          notificationRecipients: [],
+          alertLevels: ["Critical"],
+        }),
+        getEmailTemplateConfig: vi.fn().mockResolvedValue({
+          subject: "subject",
+          body: "body {{token}}",
+        }),
+      },
       logger: {
         info: vi.fn(),
         error: vi.fn(),

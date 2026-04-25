@@ -28,6 +28,17 @@ const readPayload = async (c: Context): Promise<unknown> => {
   if (c.req.method === "GET" || c.req.method === "HEAD") {
     return {};
   }
+  const contentType = c.req.header("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    return c.req.json().catch(() => ({}));
+  }
+  if (
+    contentType.includes("application/x-www-form-urlencoded") ||
+    contentType.includes("multipart/form-data")
+  ) {
+    const body = await c.req.parseBody();
+    return Object.fromEntries(Object.entries(body));
+  }
   return c.req.json().catch(() => ({}));
 };
 

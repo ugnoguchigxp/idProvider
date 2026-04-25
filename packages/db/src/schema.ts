@@ -389,3 +389,11 @@ export const legalHolds = pgTable(
     ),
   }),
 );
+
+export const systemConfigs = pgTable("system_configs", {
+  key: varchar("key", { length: 128 }).primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});

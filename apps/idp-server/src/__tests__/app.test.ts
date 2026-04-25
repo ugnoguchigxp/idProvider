@@ -28,6 +28,21 @@ const deps = {
   keyStore: {
     getPublicJwks: async () => ({ keys: [] }),
   },
+  configService: {
+    getSocialLoginConfig: async () => ({
+      providerEnabled: true,
+      clientId: "",
+      clientSecret: "",
+    }),
+    getNotificationConfig: async () => ({
+      notificationRecipients: [],
+      alertLevels: ["Critical" as const],
+    }),
+    getEmailTemplateConfig: async () => ({ subject: "subject", body: "body" }),
+    updateSocialLoginConfig: async () => undefined,
+    updateNotificationConfig: async () => undefined,
+    updateEmailTemplateConfig: async () => undefined,
+  },
   authService: {
     signup: async () => ({
       userId: crypto.randomUUID(),

@@ -1,4 +1,5 @@
 import {
+  ApiError,
   authCheckRequestSchema,
   emptyRequestSchema,
   entitlementCheckRequestSchema,
@@ -193,6 +194,15 @@ export const buildAuthenticatedRoutes = (deps: AppDependencies) => {
         deps.authService,
       ),
       handler: async (_c, payload, auth) => {
+        const googleConfig =
+          await deps.configService.getSocialLoginConfig("google");
+        if (!googleConfig.providerEnabled) {
+          throw new ApiError(
+            403,
+            "google_login_disabled",
+            "Google login is currently disabled",
+          );
+        }
         await deps.authService.verifyCurrentPassword(
           auth.userId,
           payload.currentPassword,

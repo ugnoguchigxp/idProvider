@@ -198,3 +198,17 @@ CREATE TABLE IF NOT EXISTS legal_holds (
 
 CREATE INDEX IF NOT EXISTS legal_holds_user_id_idx ON legal_holds(user_id);
 CREATE INDEX IF NOT EXISTS legal_holds_expires_at_idx ON legal_holds(expires_at);
+
+CREATE TABLE IF NOT EXISTS system_configs (
+  key VARCHAR(128) PRIMARY KEY,
+  value JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+INSERT INTO system_configs(key, value)
+VALUES
+  ('social_login.google', '{"providerEnabled": true, "clientId": "", "clientSecret": ""}'::jsonb),
+  ('notifications', '{"notificationRecipients": [], "alertLevels": ["Critical"]}'::jsonb),
+  ('email_templates.signup_verify', '{"subject":"Verify your email","body":"Hello {{email}}, verify with token: {{token}}"}'::jsonb),
+  ('email_templates.password_reset', '{"subject":"Password reset","body":"Hello {{email}}, reset with token: {{token}}"}'::jsonb)
+ON CONFLICT (key) DO NOTHING;

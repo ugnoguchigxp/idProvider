@@ -38,6 +38,24 @@ describe("Authenticated Routes (via buildApp)", () => {
       keyStore: {
         getPublicJwks: vi.fn().mockResolvedValue({ keys: [] }),
       },
+      configService: {
+        getSocialLoginConfig: vi.fn().mockResolvedValue({
+          providerEnabled: true,
+          clientId: "",
+          clientSecret: "",
+        }),
+        getNotificationConfig: vi.fn().mockResolvedValue({
+          notificationRecipients: [],
+          alertLevels: ["Critical"],
+        }),
+        getEmailTemplateConfig: vi.fn().mockResolvedValue({
+          subject: "subject",
+          body: "body {{token}}",
+        }),
+        updateSocialLoginConfig: vi.fn(),
+        updateNotificationConfig: vi.fn(),
+        updateEmailTemplateConfig: vi.fn(),
+      },
       logger: {
         info: vi.fn(),
         error: vi.fn(),

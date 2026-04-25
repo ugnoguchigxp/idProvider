@@ -9,6 +9,7 @@ import type { AppDependencies } from "./core/app-context.js";
 import { assertOAuthClientAuth } from "./core/oauth-client-auth.js";
 import { handleError } from "./middleware/error-handler.js";
 import { traceMiddleware } from "./middleware/trace.js";
+import { buildAdminRoutes } from "./routes/admin-routes.js";
 import { buildAuthenticatedRoutes } from "./routes/authenticated-routes.js";
 import { buildPublicRoutes } from "./routes/public-routes.js";
 
@@ -20,6 +21,7 @@ export const buildApp = (deps: AppDependencies) => {
 
   app.route("/", buildPublicRoutes(deps));
   app.route("/", buildAuthenticatedRoutes(deps));
+  app.route("/", buildAdminRoutes(deps));
 
   const issuer = deps.env.OIDC_ISSUER;
 
