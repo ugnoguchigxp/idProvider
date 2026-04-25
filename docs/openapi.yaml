@@ -1,0 +1,1285 @@
+openapi: 3.1.0
+info:
+  title: gxp-idProvider API
+  version: 0.3.0
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+  - url: https://idp.gxp.internal
+security: []
+
+tags:
+  - name: health
+    description: Health and readiness probes.
+  - name: auth-public
+    description: Public authentication endpoints.
+  - name: auth-protected
+    description: Bearer-token protected user endpoints.
+  - name: oauth
+    description: OAuth 2.0 token lifecycle endpoints.
+  - name: oidc
+    description: OpenID Connect discovery and key endpoints.
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+    basicAuth:
+      type: http
+      scheme: basic
+
+  schemas:
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        traceId:
+          type: string
+
+    EmptyObject:
+      type: object
+      additionalProperties: true
+
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+
+    ReadyResponse:
+      type: object
+      additionalProperties: false
+      required: [ready]
+      properties:
+        ready:
+          type: boolean
+          enum: [true]
+
+    SignupRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password, displayName]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 12
+          maxLength: 128
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 80
+
+    SignupResponseProduction:
+      type: object
+      additionalProperties: false
+      required: [status, user, verification]
+      properties:
+        status:
+          type: string
+          enum: [accepted]
+        user:
+          type: object
+          additionalProperties: false
+          required: [userId, email]
+          properties:
+            userId:
+              type: string
+              format: uuid
+            email:
+              type: string
+              format: email
+        verification:
+          type: object
+          additionalProperties: false
+          required: [required]
+          properties:
+            required:
+              type: boolean
+              enum: [true]
+
+    SignupResponseNonProduction:
+      type: object
+      additionalProperties: false
+      required: [status, user, verification]
+      properties:
+        status:
+          type: string
+          enum: [accepted]
+        user:
+          type: object
+          additionalProperties: false
+          required: [userId, email]
+          properties:
+            userId:
+              type: string
+              format: uuid
+            email:
+              type: string
+              format: email
+        verification:
+          type: object
+          additionalProperties: false
+          required: [required, token]
+          properties:
+            required:
+              type: boolean
+              enum: [true]
+            token:
+              type: string
+
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 1
+          maxLength: 128
+
+    LoginResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - userId
+        - mfaEnabled
+        - accessToken
+        - refreshToken
+        - accessExpiresAt
+        - refreshExpiresAt
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        userId:
+          type: string
+          format: uuid
+        mfaEnabled:
+          type: boolean
+        mfaWarning:
+          type: [string, 'null']
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        accessExpiresAt:
+          type: string
+          format: date-time
+        refreshExpiresAt:
+          type: string
+          format: date-time
+
+    RefreshRequest:
+      type: object
+      additionalProperties: false
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+          minLength: 16
+          maxLength: 1024
+
+    TokenRefreshResponse:
+      type: object
+      additionalProperties: false
+      required: [userId, accessToken, refreshToken, accessExpiresAt, refreshExpiresAt]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        accessExpiresAt:
+          type: string
+          format: date-time
+        refreshExpiresAt:
+          type: string
+          format: date-time
+
+    OAuthTokenResponse:
+      type: object
+      additionalProperties: false
+      required: [token_type, access_token, refresh_token, expires_in]
+      properties:
+        token_type:
+          type: string
+          enum: [Bearer]
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        expires_in:
+          type: integer
+          minimum: 1
+
+    EmailVerifyRequest:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+
+    EmailVerifyRequestResponseProduction:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [accepted]
+
+    EmailVerifyRequestResponseNonProduction:
+      type: object
+      additionalProperties: false
+      required: [status, token]
+      properties:
+        status:
+          type: string
+          enum: [accepted]
+        token:
+          type: [string, 'null']
+
+    EmailVerifyConfirmRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 16
+          maxLength: 1024
+
+    StatusOkResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+
+    PasswordResetRequest:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+
+    PasswordResetRequestResponse:
+      type: object
+      additionalProperties: false
+      required: [status, accepted]
+      properties:
+        status:
+          type: string
+          enum: [accepted]
+        accepted:
+          type: boolean
+          enum: [true]
+
+    PasswordResetConfirmRequest:
+      type: object
+      additionalProperties: false
+      required: [resetToken, newPassword]
+      properties:
+        resetToken:
+          type: string
+          minLength: 16
+          maxLength: 1024
+        newPassword:
+          type: string
+          minLength: 12
+          maxLength: 128
+
+    MeResponse:
+      type: object
+      additionalProperties: false
+      required: [userId, email, status, emailVerified]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        status:
+          type: string
+        emailVerified:
+          type: boolean
+
+    MfaEnrollResponse:
+      type: object
+      additionalProperties: false
+      required: [id, secret, provisioningUri]
+      properties:
+        id:
+          type: string
+          format: uuid
+        secret:
+          type: string
+        provisioningUri:
+          type: string
+
+    MfaVerifyRequest:
+      type: object
+      additionalProperties: false
+      required: [factorId, code]
+      properties:
+        factorId:
+          type: string
+          format: uuid
+        code:
+          type: string
+          pattern: '^\\d{6}$'
+
+    PasswordChangeRequest:
+      type: object
+      additionalProperties: false
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+          minLength: 8
+          maxLength: 128
+        newPassword:
+          type: string
+          minLength: 12
+          maxLength: 128
+
+    AuthorizationCheckRequest:
+      type: object
+      additionalProperties: false
+      required: [action, resource]
+      properties:
+        subject:
+          type: string
+        action:
+          type: string
+        resource:
+          type: string
+
+    AuthorizationCheckResponse:
+      type: object
+      additionalProperties: false
+      required: [allowed, permissionKey]
+      properties:
+        allowed:
+          type: boolean
+        permissionKey:
+          type: string
+
+    Session:
+      type: object
+      additionalProperties: false
+      required: [id, ipAddress, userAgent, lastSeenAt, createdAt, expiresAt, revokedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        ipAddress:
+          type: [string, 'null']
+        userAgent:
+          type: [string, 'null']
+        lastSeenAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        revokedAt:
+          type: [string, 'null']
+          format: date-time
+
+    SessionListResponse:
+      type: object
+      additionalProperties: false
+      required: [sessions]
+      properties:
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Session'
+
+    RevokeSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [sessionId]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+
+    RevokeSessionResponse:
+      type: object
+      additionalProperties: false
+      required: [status, sessionId]
+      properties:
+        status:
+          type: string
+          enum: [revoked]
+        sessionId:
+          type: string
+          format: uuid
+
+    RevokeAllSessionsResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [revoked_all]
+
+    GoogleLinkRequest:
+      type: object
+      additionalProperties: false
+      required: [providerSubject, email, emailVerified, currentPassword]
+      properties:
+        providerSubject:
+          type: string
+          minLength: 1
+          maxLength: 255
+        email:
+          type: string
+          format: email
+        emailVerified:
+          type: boolean
+          enum: [true]
+        currentPassword:
+          type: string
+          minLength: 8
+          maxLength: 128
+
+    GoogleUnlinkRequest:
+      type: object
+      additionalProperties: false
+      required: [providerSubject, currentPassword]
+      properties:
+        providerSubject:
+          type: string
+          minLength: 1
+          maxLength: 255
+        currentPassword:
+          type: string
+          minLength: 8
+          maxLength: 128
+
+    LinkedResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [linked]
+
+    UnlinkedResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [unlinked]
+
+    DiscoveryResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - issuer
+        - authorization_endpoint
+        - token_endpoint
+        - revocation_endpoint
+        - introspection_endpoint
+        - jwks_uri
+      properties:
+        issuer:
+          type: string
+          format: uri
+        authorization_endpoint:
+          type: string
+          format: uri
+        token_endpoint:
+          type: string
+          format: uri
+        revocation_endpoint:
+          type: string
+          format: uri
+        introspection_endpoint:
+          type: string
+          format: uri
+        jwks_uri:
+          type: string
+          format: uri
+
+    JwksResponse:
+      type: object
+      additionalProperties: false
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+
+    OAuthRevocationRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 16
+          maxLength: 1024
+
+    OAuthRevocationResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [accepted]
+
+    OAuthIntrospectionRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 16
+          maxLength: 1024
+
+    OAuthIntrospectionInactiveResponse:
+      type: object
+      additionalProperties: false
+      required: [active]
+      properties:
+        active:
+          type: boolean
+          enum: [false]
+
+    OAuthIntrospectionActiveResponse:
+      type: object
+      additionalProperties: false
+      required: [active, sub, sid, exp]
+      properties:
+        active:
+          type: boolean
+          enum: [true]
+        sub:
+          type: string
+          format: uuid
+        sid:
+          type: string
+          format: uuid
+        exp:
+          type: integer
+          minimum: 0
+
+paths:
+  /healthz:
+    get:
+      tags: [health]
+      operationId: getHealthz
+      summary: Liveness check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          description: Invalid probe request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /readyz:
+    get:
+      tags: [health]
+      operationId: getReadyz
+      summary: Readiness check
+      responses:
+        '200':
+          description: Ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+        '503':
+          description: Dependency unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          description: Invalid probe request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/signup:
+    post:
+      tags: [auth-public]
+      operationId: postV1Signup
+      summary: Create a new user account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupRequest'
+      responses:
+        '200':
+          description: Signup accepted
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/SignupResponseProduction'
+                  - $ref: '#/components/schemas/SignupResponseNonProduction'
+        '400':
+          description: Validation or business error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/login:
+    post:
+      tags: [auth-public]
+      operationId: postV1Login
+      summary: Login with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Email not verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /oauth/token:
+    post:
+      tags: [oauth]
+      operationId: postOAuthToken
+      summary: OAuth token refresh endpoint
+      security:
+        - basicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: OAuth token response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthTokenResponse'
+        '401':
+          description: Invalid client or refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/token/refresh:
+    post:
+      tags: [auth-public]
+      operationId: postV1TokenRefresh
+      summary: Refresh tokens (internal API style)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Rotated token bundle
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenRefreshResponse'
+        '401':
+          description: Invalid refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/email/verify/request:
+    post:
+      tags: [auth-public]
+      operationId: postV1EmailVerifyRequest
+      summary: Request verification token for primary email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailVerifyRequest'
+      responses:
+        '200':
+          description: Verification requested
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/EmailVerifyRequestResponseProduction'
+                  - $ref: '#/components/schemas/EmailVerifyRequestResponseNonProduction'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/email/verify/confirm:
+    post:
+      tags: [auth-public]
+      operationId: postV1EmailVerifyConfirm
+      summary: Confirm email verification token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailVerifyConfirmRequest'
+      responses:
+        '200':
+          description: Email verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusOkResponse'
+        '400':
+          description: Invalid verification token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/password/reset/request:
+    post:
+      tags: [auth-public]
+      operationId: postV1PasswordResetRequest
+      summary: Request password reset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequest'
+      responses:
+        '200':
+          description: Reset requested
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordResetRequestResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/password/reset/confirm:
+    post:
+      tags: [auth-public]
+      operationId: postV1PasswordResetConfirm
+      summary: Confirm password reset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetConfirmRequest'
+      responses:
+        '200':
+          description: Reset confirmed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusOkResponse'
+        '400':
+          description: Invalid reset token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/me:
+    get:
+      tags: [auth-protected]
+      operationId: getV1Me
+      summary: Get current authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/logout:
+    post:
+      tags: [auth-protected]
+      operationId: postV1Logout
+      summary: Revoke current session
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyObject'
+      responses:
+        '200':
+          description: Logout success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusOkResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/mfa/enroll:
+    post:
+      tags: [auth-protected]
+      operationId: postV1MfaEnroll
+      summary: Enroll TOTP factor
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyObject'
+      responses:
+        '200':
+          description: Enrollment started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MfaEnrollResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/mfa/verify:
+    post:
+      tags: [auth-protected]
+      operationId: postV1MfaVerify
+      summary: Verify TOTP code and enable factor
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MfaVerifyRequest'
+      responses:
+        '200':
+          description: MFA enabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusOkResponse'
+        '400':
+          description: Invalid MFA code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/password/change:
+    post:
+      tags: [auth-protected]
+      operationId: postV1PasswordChange
+      summary: Change password with current-password verification
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordChangeRequest'
+      responses:
+        '200':
+          description: Password changed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusOkResponse'
+        '401':
+          description: Unauthorized or invalid password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/authorization/check:
+    post:
+      tags: [auth-protected]
+      operationId: postV1AuthorizationCheck
+      summary: Check RBAC permission
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthorizationCheckRequest'
+      responses:
+        '200':
+          description: Authorization decision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthorizationCheckResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/sessions:
+    get:
+      tags: [auth-protected]
+      operationId: getV1Sessions
+      summary: List user sessions
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Session list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/sessions/revoke:
+    post:
+      tags: [auth-protected]
+      operationId: postV1SessionsRevoke
+      summary: Revoke a specific session
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeSessionRequest'
+      responses:
+        '200':
+          description: Session revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokeSessionResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/sessions/revoke-all:
+    post:
+      tags: [auth-protected]
+      operationId: postV1SessionsRevokeAll
+      summary: Revoke all sessions
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyObject'
+      responses:
+        '200':
+          description: All sessions revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokeAllSessionsResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/identities/google/link:
+    post:
+      tags: [auth-protected]
+      operationId: postV1IdentitiesGoogleLink
+      summary: Link Google identity to current account
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoogleLinkRequest'
+      responses:
+        '200':
+          description: Linked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LinkedResponse'
+        '401':
+          description: Unauthorized or invalid password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Google identity already linked to another account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/identities/google/unlink:
+    post:
+      tags: [auth-protected]
+      operationId: postV1IdentitiesGoogleUnlink
+      summary: Unlink Google identity from current account
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoogleUnlinkRequest'
+      responses:
+        '200':
+          description: Unlinked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnlinkedResponse'
+        '401':
+          description: Unauthorized or invalid password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /.well-known/openid-configuration:
+    get:
+      tags: [oidc]
+      operationId: getOidcDiscovery
+      summary: OIDC discovery document
+      responses:
+        '200':
+          description: Discovery
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoveryResponse'
+        '503':
+          description: OIDC service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          description: Invalid discovery request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /.well-known/jwks.json:
+    get:
+      tags: [oidc]
+      operationId: getOidcJwks
+      summary: JWKS endpoint
+      responses:
+        '200':
+          description: JWKS
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JwksResponse'
+        '503':
+          description: OIDC key service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          description: Invalid JWKS request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /oauth/revocation:
+    post:
+      tags: [oauth]
+      operationId: postOauthRevocation
+      summary: Revoke by access/refresh token
+      security:
+        - basicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthRevocationRequest'
+      responses:
+        '200':
+          description: Revocation accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthRevocationResponse'
+        '401':
+          description: Invalid client
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /oauth/introspection:
+    post:
+      tags: [oauth]
+      operationId: postOauthIntrospection
+      summary: Introspect access token activity
+      security:
+        - basicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthIntrospectionRequest'
+      responses:
+        '200':
+          description: Introspection response
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/OAuthIntrospectionInactiveResponse'
+                  - $ref: '#/components/schemas/OAuthIntrospectionActiveResponse'
+        '401':
+          description: Invalid client
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'

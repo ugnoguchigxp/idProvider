@@ -1,0 +1,38 @@
+{
+  "name": "gxp-idprovider",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.0.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "argon2",
+      "esbuild",
+      "msw"
+    ]
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm --filter @idp/idp-server dev",
+    "test": "pnpm -r test",
+    "lint": "biome check --error-on-warnings .",
+    "format": "biome check --write .",
+    "typecheck": "pnpm -r typecheck",
+    "verify": "pnpm verify:quick && pnpm verify:build && pnpm verify:openapi",
+    "verify:quick": "pnpm verify:lint && pnpm typecheck && pnpm test",
+    "verify:lint": "pnpm lint",
+    "verify:build": "pnpm build",
+    "verify:openapi": "pnpm --package=@redocly/cli dlx redocly lint docs/openapi.yaml",
+    "verify:security": "pnpm audit --audit-level=high",
+    "db:migrate": "bash ./scripts/migrate.sh",
+    "stack:up": "docker compose -f infra/docker-compose.yml up -d",
+    "stack:down": "docker compose -f infra/docker-compose.yml down",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.13",
+    "husky": "^9.1.7"
+  }
+}
