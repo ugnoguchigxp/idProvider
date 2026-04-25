@@ -2,6 +2,7 @@ import {
   ApiError,
   emailVerificationConfirmSchema,
   emailVerificationRequestSchema,
+  googleLoginRequestSchema,
   loginRequestSchema,
   passwordResetConfirmRequestSchema,
   passwordResetRequestSchema,
@@ -112,6 +113,39 @@ export const buildPublicRoutes = (deps: AppDependencies) => {
         const result = await deps.authService.login({
           email: payload.email,
           password: payload.password,
+          ipAddress,
+          userAgent,
+        });
+
+        return {
+          status: "ok",
+          ...result,
+        };
+      },
+    }),
+  );
+
+  app.post(
+    "/v1/login/google",
+    publicEndpointAdapter({
+      schema: googleLoginRequestSchema,
+      handler: async (c, payload) => {
+        const googleConfig =
+          await deps.configService.getSocialLoginConfig("google");
+        if (!googleConfig.providerEnabled) {
+          throw new ApiError(
+            403,
+            "google_login_disabled",
+            "Google login is currently disabled",
+          );
+        }
+
+        const ipAddress = getIpAddress(c.req.header("x-forwarded-for"));
+        const userAgent = c.req.header("user-agent") ?? null;
+
+        const result = await deps.authService.loginWithGoogle({
+          idToken: payload.idToken,
+          clientId: googleConfig.clientId,
           ipAddress,
           userAgent,
         });

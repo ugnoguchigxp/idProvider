@@ -4,8 +4,18 @@ import {
   generateKeyPairSync,
   randomUUID,
 } from "node:crypto";
-import { type DbClient, signingKeys, withTransaction } from "@idp/db";
-import { and, asc, desc, eq, gt, isNull, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  type DbClient,
+  desc,
+  eq,
+  gt,
+  isNull,
+  or,
+  signingKeys,
+  withTransaction,
+} from "@idp/db";
 
 type Jwk = Record<string, unknown>;
 

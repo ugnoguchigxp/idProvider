@@ -1,144 +1,244 @@
 # gxp-idProvider
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-24_LTS-green.svg)](https://nodejs.org/)
-[![pnpm](https://img.shields.io/badge/pnpm-10+-orange.svg)](https://pnpm.io/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+TypeScript で構築した Identity Provider (IdP) モノレポです。  
+Hono ベースの API と `oidc-provider` を組み合わせ、OIDC/OAuth2、認証、認可、監査、運用バッチを一貫して提供します。
 
-**gxp-idProvider** は、高パフォーマンス、セキュリティ、および拡張性を重視して設計されたコンシューマーグレードのアイデンティティプロバイダー (IdP) 実装です。モダンな TypeScript スタックを活用し、OIDC/OAuth2 互換の認証サービスを提供します。
+## 概要
 
----
+- ランタイム: Node.js 24 LTS
+- パッケージ管理: pnpm 10+
+- API サーバー: Hono (`apps/idp-server`)
+- OIDC 実装: `oidc-provider`
+- DB: PostgreSQL + Drizzle ORM
+- バリデーション: Zod
+- ログ: pino
+- テスト: Vitest
+- Lint/Format: Biome
 
-## 🚀 主な機能
+## このリポジトリで重視している設計
 
-- **標準的な認証フロー**: サインアップ、ログイン、ログアウトおよびセッション管理。
-- **高度なセキュリティ**:
-  - Argon2id によるパスワードハッシュ化。
-  - セッションハイジャックを防止するリフレッシュトークン回転 (RTR)。
-  - TOTP による多要素認証 (MFA)。
-- **標準プロトコル対応**:
-  - `oidc-provider` による OIDC/OAuth2 ディスカバリおよびエンドポイント。
-  - イントロスペクションおよびリボケーションエンドポイント。
-- **コンプライアンスと監査**:
-  - 詳細なセキュリティイベントログ。
-  - すべての管理者およびユーザーアクションに対する永続的な監査ログ。
-- **開発者フレンドリー**:
-  - Zod スキーマバリデーションによる完全な TypeScript サポート。
-  - Drizzle ORM による型安全なデータベース操作。
-  - 関心の分離を徹底したモノレポ構造。
+- API エンドポイントは adapter 経由で公開する
+- 認証要件がある API は `authenticated-endpoint-adapter` 経由
+- 非認証 API は `public-endpoint-adapter` 経由
+- 入力バリデーションは Zod スキーマを単一ソース化
+- OpenAPI 仕様 (`docs/openapi.yaml`) と実装の整合性を `verify` で確認
 
----
+## 主な機能
 
-## 🛠 技術スタック
+- ユーザー認証
+  - サインアップ / ログイン / ログアウト
+  - アクセストークン + リフレッシュトークン (RTR)
+  - セッション一覧 / 個別失効 / 全失効
+- 認証強化
+  - Argon2id パスワードハッシュ
+  - MFA (TOTP)
+  - レート制限 (signup / login)
+- 認可
+  - `authorization/check` (RBAC)
+  - `entitlements/check` (attribute/quantity 型 entitlement)
+  - 組織・グループ文脈を考慮した判定
+- OIDC/OAuth2
+  - Discovery (`/.well-known/openid-configuration`)
+  - JWKS (`/.well-known/jwks.json`)
+  - Token refresh / Introspection / Revocation
+  - JWKS ローテーション
+- 外部 IdP 連携
+  - Google identity の link / unlink
+  - 管理設定で Google 連携の有効/無効を切り替え
+- 管理 UI / 設定管理
+  - `/admin` (Bearer token 必須)
+  - `system_configs` テーブルによる動的設定
+  - ソーシャルログイン、通知、メールテンプレート管理
+- 監査・セキュリティ
+  - `audit_logs` / `security_events` 記録
+  - セキュリティイベント連動の通知トリガー
+- データ保持・匿名化
+  - 監査ログ、セキュリティイベント、セッションを対象
+  - legal hold (`legal_holds`) を考慮
+  - dry-run / advisory lock 対応のバッチ
 
-- **ランタイム**: Node.js 24 LTS
-- **Web フレームワーク**: [Hono](https://hono.dev/)
-- **データベース**: PostgreSQL (via [Drizzle ORM](https://orm.drizzle.team/))
-- **OIDC エンジン**: [oidc-provider](https://github.com/panva/node-oidc-provider)
-- **バリデーション**: [Zod](https://zod.dev/)
-- **テスト**: [Vitest](https://vitest.dev/) (カバレッジ 80% 以上を強制)
-
----
-
-## 📂 プロジェクト構造
+## プロジェクト構成
 
 ```text
 .
 ├── apps/
-│   └── idp-server/           # メイン API サーバー & OIDC ランタイム
+│   └── idp-server/                 # API サーバー + OIDC 起動
 ├── packages/
-│   ├── auth-core/           # ドメインロジック (AuthService)
-│   ├── db/                  # データベーススキーマ & Drizzle クライアント
-│   ├── shared/              # 共有 Zod スキーマ & エラーモデル
-│   ├── oidc-client-sdk/     # クライアントアプリ向け SDK
-│   └── server-sdk/          # バックエンドサービス統合向け SDK
+│   ├── auth-core/                  # 認証・認可ドメインロジック
+│   ├── db/                         # Drizzle schema / DB client
+│   ├── shared/                     # Zod schema / 共通エラー
+│   ├── oidc-client-sdk/            # OIDC クライアント SDK
+│   └── server-sdk/                 # サーバー統合向け SDK
 ├── infra/
-│   ├── docker-compose.yml    # ローカル開発用スタック (Postgres/Redis)
-│   └── migrations/          # SQL マイグレーションファイル
-└── docs/
-    ├── openapi.yaml         # API 仕様書 (ドラフト)
-    └── data-retention-policy.md # 保持期間・匿名化・自動削除ポリシー
+│   ├── docker-compose.yml          # Postgres / Redis
+│   └── migrations/                 # SQL マイグレーション
+├── docs/
+│   ├── openapi.yaml                # OpenAPI 仕様
+│   ├── admin-ui-plan.md            # 管理UI計画
+│   ├── google-federation.md        # Google 連携設計
+│   ├── oidc-client.md              # OIDC client 計画
+│   └── qa-and-performance-plan.md  # QA/性能計画
+└── plan.md                         # 実装計画メモ
 ```
 
----
+## 前提条件
 
-## ⚙️ セットアップ
+- Node.js `>= 24.0.0`
+- pnpm `>= 10`
+- Docker / Docker Compose
 
-### 前提条件
-
-- Node.js >= 24.0.0
-- pnpm >= 10
-- Docker Desktop
-
-### インストール
-
-1. **リポジトリをクローンする**
-2. **依存関係をインストールする**
-   ```bash
-   pnpm install
-   ```
-3. **環境変数を設定する**
-   ```bash
-   cp .env.example .env
-   ```
-4. **ローカルインフラを起動する**
-   ```bash
-   pnpm stack:up
-   ```
-5. **マイグレーションを実行する**
-   ```bash
-   pnpm db:migrate
-   ```
-6. **開発サーバーを起動する**
-   ```bash
-   pnpm dev
-   ```
-
----
-
-## 🧪 テスト
-
-プロジェクトでは、厳格なコードカバレッジ閾値（ライン、ブランチ、関数すべて 80% 以上）を設定しています。
+## セットアップ
 
 ```bash
-# 全テストを実行
-pnpm test
+pnpm install
+cp .env.example .env
+pnpm stack:up
+pnpm db:migrate
+pnpm dev
+```
 
-# カバレッジレポート付きでテストを実行
-pnpm test --coverage
+起動後:
 
-# プロジェクト全体の型チェック
-pnpm typecheck
+- API: `http://localhost:3000`
+- OIDC issuer: `http://localhost:3001`
 
-# 型 + テスト + ビルド + OpenAPI 検証
-pnpm verify
+## 環境変数
 
-# Linter (Biome) のみ実行
-pnpm verify:lint
+`.env.example` をベースに設定します。主な変数は以下です。
 
-# 依存脆弱性チェック（任意）
-pnpm verify:security
+- 基本
+  - `NODE_ENV`, `PORT`, `OIDC_PORT`, `OIDC_ISSUER`
+- OAuth クライアント認証
+  - `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET`
+- トークン有効期限
+  - `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_SECONDS`
+- パスワードハッシュ
+  - `ARGON2_MEMORY_COST`, `ARGON2_TIME_COST`, `ARGON2_PARALLELISM`
+- レート制限
+  - `RATE_LIMIT_SIGNUP_PER_MIN`, `RATE_LIMIT_LOGIN_PER_MIN`
+- MFA
+  - `MFA_ISSUER`
+- JWKS
+  - `JWKS_ROTATION_INTERVAL_HOURS`, `JWKS_GRACE_PERIOD_HOURS`
+- データ保持
+  - `RETENTION_AUDIT_LOG_ANONYMIZE_DAYS`, `RETENTION_AUDIT_LOG_DELETE_DAYS`
+  - `RETENTION_SECURITY_EVENT_ANONYMIZE_DAYS`, `RETENTION_SECURITY_EVENT_DELETE_DAYS`
+  - `RETENTION_SESSION_ANONYMIZE_DAYS`, `RETENTION_SESSION_DELETE_DAYS`
+  - `RETENTION_BATCH_CHUNK_SIZE`, `RETENTION_JOB_LOCK_KEY`
+- インフラ
+  - `DATABASE_URL`, `REDIS_URL`, `JWT_PRIVATE_KEY`
+- Google 連携
+  - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+- 観測
+  - `LOG_LEVEL`, `OTEL_EXPORTER_OTLP_ENDPOINT`
 
-# 保持期間バッチ（dry-run）
+補足:
+
+- 本番環境では `JWT_PRIVATE_KEY` に開発用値を使えないようにバリデーションしています。
+- retention 系は `ANONYMIZE_DAYS <= DELETE_DAYS` の整合性チェックがあります。
+
+## API エンドポイント概要
+
+詳細は [`docs/openapi.yaml`](docs/openapi.yaml) を参照してください。
+
+- Public
+  - `POST /v1/signup`
+  - `POST /v1/login`
+  - `POST /v1/token/refresh`
+  - `POST /oauth/token`
+  - `POST /oauth/introspection`
+  - `POST /oauth/revocation`
+  - `POST /v1/email/verify/request`
+  - `POST /v1/email/verify/confirm`
+  - `POST /v1/password/reset/request`
+  - `POST /v1/password/reset/confirm`
+  - `GET /healthz`, `GET /readyz`
+- Authenticated
+  - `GET /v1/me`
+  - `POST /v1/logout`
+  - `POST /v1/mfa/enroll`
+  - `POST /v1/mfa/verify`
+  - `POST /v1/password/change`
+  - `POST /v1/authorization/check`
+  - `POST /v1/entitlements/check`
+  - `GET /v1/sessions`
+  - `POST /v1/sessions/revoke`
+  - `POST /v1/sessions/revoke-all`
+  - `POST /v1/identities/google/link`
+  - `POST /v1/identities/google/unlink`
+- Admin
+  - `GET /admin`
+  - `GET /v1/admin/configs`
+  - `PUT /v1/admin/configs/social-login/google`
+  - `PUT /v1/admin/configs/notifications`
+  - `PUT /v1/admin/configs/email-template`
+
+## 管理 UI の使い方
+
+1. 管理者権限を持つユーザーのアクセストークンを用意
+2. `Authorization: Bearer <token>` ヘッダー付きで `GET /admin` を開く
+3. 画面上の Token 入力にトークンを設定
+4. 設定変更を保存すると `system_configs` に反映
+
+## データ保持バッチ
+
+- dry-run
+
+```bash
 pnpm retention:dry-run
+```
 
-# 保持期間バッチ（実行）
+- 実行
+
+```bash
 pnpm retention:run
 ```
 
----
+実装ポイント:
 
-## 🛣 ロードマップと改善案（コードレビューに基づく）
+- `pg_try_advisory_lock` で同時実行防止
+- chunk 処理
+- 匿名化フェーズ -> 削除フェーズ
+- active legal hold 対象ユーザー関連データは除外
 
-詳細計画: [実装計画書](docs/implementation-plan.md)
+## 開発コマンド
 
-- [x] **トランザクションの整合性**: サインアップやパスワードリセット等の複数ステップフローを DB トランザクションで保護。
-- [x] **JWKS サポート**: 公開鍵の配信および自動回転の実装。
-- [x] **設定の外部化**: セッションの有効期限やハッシュパラメータを環境変数に移行。
-- [x] **OIDC 統合の強化**: Hono ルートと `oidc-provider` のディスカバリロジックの連携強化。
+- `pnpm dev`: idp-server 開発起動
+- `pnpm build`: 全ワークスペース build
+- `pnpm typecheck`: 全ワークスペース型チェック
+- `pnpm test`: 全ワークスペーステスト
+- `pnpm lint`: Biome lint
+- `pnpm format`: Biome format
+- `pnpm db:migrate`: DB マイグレーション
+- `pnpm stack:up`: ローカル依存起動
+- `pnpm stack:down`: ローカル依存停止
 
----
+## 品質ゲート (`verify`)
 
-## 📄 ライセンス
+```bash
+pnpm verify
+```
 
-MIT License - 詳細は [LICENSE](LICENSE) を参照してください。
+`verify` の内容:
+
+1. `pnpm verify:lint` (Biome)
+2. `pnpm typecheck`
+3. `pnpm test`
+4. `pnpm verify:build`
+5. `pnpm verify:openapi` (Redocly lint)
+
+補助コマンド:
+
+- `pnpm verify:security` (`pnpm audit --audit-level=high`)
+
+## ドキュメント
+
+- OpenAPI: [`docs/openapi.yaml`](docs/openapi.yaml)
+- 管理UI計画: [`docs/admin-ui-plan.md`](docs/admin-ui-plan.md)
+- Google連携設計: [`docs/google-federation.md`](docs/google-federation.md)
+- OIDC Client 計画: [`docs/oidc-client.md`](docs/oidc-client.md)
+- QA/性能計画: [`docs/qa-and-performance-plan.md`](docs/qa-and-performance-plan.md)
+
+## ライセンス
+
+MIT

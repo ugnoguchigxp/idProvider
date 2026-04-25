@@ -1,5 +1,4 @@
-import { type DbClient, systemConfigs } from "@idp/db";
-import { eq } from "drizzle-orm";
+import { type DbClient, eq, systemConfigs } from "@idp/db";
 
 export type SocialLoginConfig = {
   providerEnabled: boolean;

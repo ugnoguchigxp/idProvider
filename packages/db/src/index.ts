@@ -1,5 +1,7 @@
 export {
   and,
+  asc,
+  desc,
   eq,
   gt,
   inArray,

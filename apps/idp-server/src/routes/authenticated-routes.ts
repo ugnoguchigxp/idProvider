@@ -209,9 +209,8 @@ export const buildAuthenticatedRoutes = (deps: AppDependencies) => {
         );
         await deps.authService.linkGoogleIdentity({
           userId: auth.userId,
-          providerSubject: payload.providerSubject,
-          email: payload.email,
-          emailVerified: payload.emailVerified,
+          idToken: payload.idToken,
+          clientId: googleConfig.clientId,
         });
 
         return { status: "linked" };
@@ -231,8 +230,9 @@ export const buildAuthenticatedRoutes = (deps: AppDependencies) => {
           auth.userId,
           payload.currentPassword,
         );
-        await deps.authService.unlinkGoogleIdentity(
+        await deps.authService.unlinkSocialIdentity(
           auth.userId,
+          "google",
           payload.providerSubject,
         );
 

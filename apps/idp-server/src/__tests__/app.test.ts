@@ -98,7 +98,7 @@ const deps = {
     revokeAllSessions: async () => undefined,
     verifyCurrentPassword: async () => undefined,
     linkGoogleIdentity: async () => undefined,
-    unlinkGoogleIdentity: async () => undefined,
+    unlinkSocialIdentity: async () => undefined,
     revokeByToken: async () => undefined,
     introspectToken: async () => ({ active: false }),
   },

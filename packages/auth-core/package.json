@@ -19,6 +19,7 @@
     "@idp/shared": "workspace:*",
     "argon2": "^0.43.0",
     "drizzle-orm": "^0.44.0",
+    "google-auth-library": "^10.6.2",
     "ioredis": "^5.10.1",
     "otplib": "^12.0.1"
   },

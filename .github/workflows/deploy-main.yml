@@ -1,0 +1,102 @@
+name: Deploy Main
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm build
+
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      deploy_enabled: ${{ steps.check.outputs.deploy_enabled }}
+    steps:
+      - id: check
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          STANDBY_HOST: ${{ secrets.STANDBY_HOST }}
+          ONLINE_HOST: ${{ secrets.ONLINE_HOST }}
+          REMOTE_DEPLOY_COMMAND: ${{ secrets.REMOTE_DEPLOY_COMMAND }}
+          STANDBY_HEALTHCHECK_URL: ${{ secrets.STANDBY_HEALTHCHECK_URL }}
+          SWITCH_TRAFFIC_COMMAND: ${{ secrets.SWITCH_TRAFFIC_COMMAND }}
+        run: |
+          set -euo pipefail
+          if [ -n "${DEPLOY_USER}" ] && [ -n "${DEPLOY_SSH_KEY}" ] && [ -n "${STANDBY_HOST}" ] && [ -n "${ONLINE_HOST}" ] && [ -n "${REMOTE_DEPLOY_COMMAND}" ] && [ -n "${STANDBY_HEALTHCHECK_URL}" ] && [ -n "${SWITCH_TRAFFIC_COMMAND}" ]; then
+            echo "deploy_enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy_enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Deployment skipped because one or more required secrets are missing." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  deploy-standby:
+    runs-on: ubuntu-latest
+    needs: [build, preflight]
+    if: ${{ needs.preflight.outputs.deploy_enabled == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup SSH key
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "${{ secrets.STANDBY_HOST }}" >> ~/.ssh/known_hosts
+      - name: Deploy to standby
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          STANDBY_HOST: ${{ secrets.STANDBY_HOST }}
+          REMOTE_DEPLOY_COMMAND: ${{ secrets.REMOTE_DEPLOY_COMMAND }}
+        run: ./scripts/deploy-standby.sh
+
+  verify-standby:
+    runs-on: ubuntu-latest
+    needs: [deploy-standby, preflight]
+    if: ${{ needs.preflight.outputs.deploy_enabled == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify standby health
+        env:
+          STANDBY_HEALTHCHECK_URL: ${{ secrets.STANDBY_HEALTHCHECK_URL }}
+          STANDBY_BASE_URL: ${{ secrets.STANDBY_BASE_URL }}
+          SMOKE_LOGIN_EMAIL: ${{ secrets.SMOKE_LOGIN_EMAIL }}
+          SMOKE_LOGIN_PASSWORD: ${{ secrets.SMOKE_LOGIN_PASSWORD }}
+          SMOKE_CLIENT_BASIC_AUTH: ${{ secrets.SMOKE_CLIENT_BASIC_AUTH }}
+          SMOKE_REFRESH_TOKEN: ${{ secrets.SMOKE_REFRESH_TOKEN }}
+        run: ./scripts/verify-standby.sh
+
+  switch-traffic:
+    runs-on: ubuntu-latest
+    needs: [verify-standby, preflight]
+    if: ${{ needs.preflight.outputs.deploy_enabled == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup SSH key
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "${{ secrets.ONLINE_HOST }}" >> ~/.ssh/known_hosts
+      - name: Switch reverse proxy target
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          ONLINE_HOST: ${{ secrets.ONLINE_HOST }}
+          SWITCH_TRAFFIC_COMMAND: ${{ secrets.SWITCH_TRAFFIC_COMMAND }}
+          TRAFFIC_TARGET: standby
+        run: ./scripts/switch-traffic.sh --to "${TRAFFIC_TARGET}"

@@ -1,16 +1,22 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
+  and,
   auditLogs,
   type DbClient,
   type DbTransaction,
+  desc,
   emailVerificationTokens,
   entitlements,
+  eq,
   externalIdentities,
   groupMemberships,
   groupRoles,
   groups,
+  gt,
+  isNull,
   loginAttempts,
   mfaFactors,
+  or,
   organizations,
   passwordResetTokens,
   permissions,
@@ -25,7 +31,7 @@ import {
 } from "@idp/db";
 import { ApiError } from "@idp/shared";
 import argon2 from "argon2";
-import { and, desc, eq, gt, isNull, or } from "drizzle-orm";
+import { OAuth2Client } from "google-auth-library";
 import { authenticator } from "otplib";
 
 export type AuthServiceOptions = {
@@ -1238,17 +1244,193 @@ export class AuthService {
     await this.writeSecurityEvent("mfa.enabled", userId, { factorId });
   }
 
-  async linkGoogleIdentity(input: {
-    userId: string;
+  private async authenticateSocialIdentity(input: {
+    provider: string;
     providerSubject: string;
     email: string;
-    emailVerified: boolean;
+    ipAddress: string | null;
+    userAgent: string | null;
+    db: DbTransaction | DbClient;
   }) {
-    if (!input.emailVerified) {
+    const { provider, providerSubject, email, ipAddress, userAgent, db } =
+      input;
+
+    // 1. Check if this social identity is already linked
+    const existingIdentity = await db
+      .select({ userId: externalIdentities.userId })
+      .from(externalIdentities)
+      .where(
+        and(
+          eq(externalIdentities.provider, provider),
+          eq(externalIdentities.providerSubject, providerSubject),
+        ),
+      )
+      .limit(1);
+
+    let userId: string;
+
+    if (existingIdentity[0]) {
+      userId = existingIdentity[0].userId;
+    } else {
+      // 2. Check if a user with this email already exists
+      const existingUser = await db
+        .select({ userId: userEmails.userId })
+        .from(userEmails)
+        .where(and(eq(userEmails.email, email), eq(userEmails.isPrimary, true)))
+        .limit(1);
+
+      if (existingUser[0]) {
+        userId = existingUser[0].userId;
+        // Auto-link if email matches (Trusting the social provider's verified email)
+        await db.insert(externalIdentities).values({
+          userId,
+          provider,
+          providerSubject,
+          email,
+          isEmailVerified: true,
+        });
+      } else {
+        // 3. Create new user (Signup)
+        const inserted = await db
+          .insert(users)
+          .values({ status: "active" })
+          .returning({ id: users.id });
+        const user = inserted[0];
+        if (!user) {
+          throw new ApiError(
+            500,
+            "user_create_failed",
+            "Failed to create user",
+          );
+        }
+        userId = user.id;
+
+        await db.insert(userEmails).values({
+          userId,
+          email,
+          isPrimary: true,
+          isVerified: true,
+        });
+
+        await db.insert(externalIdentities).values({
+          userId,
+          provider,
+          providerSubject,
+          email,
+          isEmailVerified: true,
+        });
+
+        await this.writeSecurityEvent(
+          `signup.${provider}.created`,
+          userId,
+          { email, ipAddress },
+          db,
+        );
+      }
+    }
+
+    const factor = await db
+      .select({ id: mfaFactors.id })
+      .from(mfaFactors)
+      .where(and(eq(mfaFactors.userId, userId), eq(mfaFactors.enabled, true)))
+      .limit(1);
+
+    const mfaEnabled = factor.length > 0;
+    const tokens = await this.createSession(userId, ipAddress, userAgent, db);
+
+    await this.writeSecurityEvent(
+      `login.${provider}.success`,
+      userId,
+      { email, ipAddress, mfaEnabled },
+      db,
+    );
+
+    return {
+      userId,
+      mfaEnabled,
+      ...tokens,
+    };
+  }
+
+  async loginWithGoogle(input: {
+    idToken: string;
+    clientId: string;
+    ipAddress: string | null;
+    userAgent: string | null;
+  }) {
+    const client = new OAuth2Client(input.clientId);
+    const ticket = await client.verifyIdToken({
+      idToken: input.idToken,
+      audience: input.clientId,
+    });
+    const payload = ticket.getPayload();
+
+    if (!payload?.sub || !payload.email) {
+      throw new ApiError(
+        400,
+        "invalid_google_token",
+        "Invalid Google ID Token",
+      );
+    }
+
+    if (!payload.email_verified) {
       throw new ApiError(
         400,
         "google_email_not_verified",
         "Google account email must be verified",
+      );
+    }
+
+    const email = payload.email.toLowerCase();
+
+    return await this.runInTransaction(async (tx) => {
+      return this.authenticateSocialIdentity({
+        provider: "google",
+        providerSubject: payload.sub,
+        email,
+        ipAddress: input.ipAddress,
+        userAgent: input.userAgent,
+        db: tx,
+      });
+    });
+  }
+
+  async linkGoogleIdentity(input: {
+    userId: string;
+    idToken: string;
+    clientId: string;
+  }) {
+    const client = new OAuth2Client(input.clientId);
+    const ticket = await client.verifyIdToken({
+      idToken: input.idToken,
+      audience: input.clientId,
+    });
+    const payload = ticket.getPayload();
+    if (!payload?.sub || !payload.email) {
+      throw new ApiError(
+        400,
+        "invalid_google_token",
+        "Invalid Google ID Token",
+      );
+    }
+
+    if (!payload.email_verified) {
+      throw new ApiError(
+        400,
+        "google_email_not_verified",
+        "Google account email must be verified",
+      );
+    }
+
+    const providerSubject = payload.sub;
+    const email = payload.email.toLowerCase();
+
+    const user = await this.getMe(input.userId);
+    if (user.email !== email) {
+      throw new ApiError(
+        400,
+        "email_mismatch",
+        `Google email (${email}) does not match your primary email (${user.email})`,
       );
     }
 
@@ -1258,37 +1440,38 @@ export class AuthService {
       .where(
         and(
           eq(externalIdentities.provider, "google"),
-          eq(externalIdentities.providerSubject, input.providerSubject),
+          eq(externalIdentities.providerSubject, providerSubject),
         ),
       )
       .limit(1);
 
     const mapped = existing[0];
-    if (mapped && mapped.userId !== input.userId) {
+    if (mapped) {
+      if (mapped.userId === input.userId) {
+        return;
+      }
       throw new ApiError(
         409,
         "google_identity_in_use",
-        "Google identity is already linked",
+        "Google identity is already linked to another account",
       );
     }
 
     await this.runInTransaction(async (tx) => {
-      if (!mapped) {
-        await tx.insert(externalIdentities).values({
-          userId: input.userId,
-          provider: "google",
-          providerSubject: input.providerSubject,
-          email: input.email,
-          isEmailVerified: true,
-        });
-      }
+      await tx.insert(externalIdentities).values({
+        userId: input.userId,
+        provider: "google",
+        providerSubject,
+        email,
+        isEmailVerified: true,
+      });
 
       await this.writeSecurityEvent(
         "identity.google.linked",
         input.userId,
         {
-          providerSubject: input.providerSubject,
-          email: input.email,
+          providerSubject,
+          email,
         },
         tx,
       );
@@ -1298,40 +1481,43 @@ export class AuthService {
           actorUserId: input.userId,
           action: "identity.google.link",
           resourceType: "external_identity",
-          resourceId: input.providerSubject,
-          payload: {
-            email: input.email,
-          },
+          resourceId: providerSubject,
+          payload: { email },
         },
         tx,
       );
     });
   }
 
-  async unlinkGoogleIdentity(userId: string, providerSubject: string) {
+  async unlinkSocialIdentity(
+    userId: string,
+    provider: string,
+    providerSubject: string,
+  ) {
     await this.runInTransaction(async (tx) => {
       await tx
         .delete(externalIdentities)
         .where(
           and(
             eq(externalIdentities.userId, userId),
-            eq(externalIdentities.provider, "google"),
+            eq(externalIdentities.provider, provider),
             eq(externalIdentities.providerSubject, providerSubject),
           ),
         );
 
       await this.writeSecurityEvent(
-        "identity.google.unlinked",
+        `identity.${provider}.unlinked`,
         userId,
         {
           providerSubject,
         },
         tx,
       );
+
       await this.writeAuditLog(
         {
           actorUserId: userId,
-          action: "identity.google.unlink",
+          action: `identity.${provider}.unlink`,
           resourceType: "external_identity",
           resourceId: providerSubject,
           payload: {},

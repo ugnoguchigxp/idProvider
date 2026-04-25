@@ -30,7 +30,7 @@ describe("Authenticated Routes (via buildApp)", () => {
         revokeAllSessions: vi.fn(),
         verifyCurrentPassword: vi.fn(),
         linkGoogleIdentity: vi.fn(),
-        unlinkGoogleIdentity: vi.fn(),
+        unlinkSocialIdentity: vi.fn(),
       },
       rateLimiter: {
         consume: vi.fn().mockResolvedValue({ allowed: true, remaining: 10 }),
@@ -176,9 +176,7 @@ describe("Authenticated Routes (via buildApp)", () => {
       method: "POST",
       headers: { ...authHeader, "Content-Type": "application/json" },
       body: JSON.stringify({
-        providerSubject: "sub",
-        email: "x@x.com",
-        emailVerified: true,
+        idToken: "id_token_long_enough_12345",
         currentPassword: "password123456",
       }),
     });

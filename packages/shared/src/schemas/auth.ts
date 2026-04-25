@@ -73,10 +73,12 @@ export const passwordResetConfirmRequestSchema = z.object({
   newPassword: z.string().min(12).max(128),
 });
 
+export const googleLoginRequestSchema = z.object({
+  idToken: z.string().min(1),
+});
+
 export const googleLinkRequestSchema = z.object({
-  providerSubject: z.string().min(1).max(255),
-  email: normalizedEmail,
-  emailVerified: z.literal(true),
+  idToken: z.string().min(1),
   currentPassword: z.string().min(8).max(128),
 });
 
@@ -94,6 +96,7 @@ export type EntitlementCheckRequest = z.infer<
 >;
 export type MfaEnrollRequest = z.infer<typeof mfaEnrollRequestSchema>;
 export type MfaVerifyRequest = z.infer<typeof mfaVerifyRequestSchema>;
+export type GoogleLoginRequest = z.infer<typeof googleLoginRequestSchema>;
 export type GoogleLinkRequest = z.infer<typeof googleLinkRequestSchema>;
 export type GoogleUnlinkRequest = z.infer<typeof googleUnlinkRequestSchema>;
 export type PasswordChangeRequest = z.infer<typeof passwordChangeRequestSchema>;

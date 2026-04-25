@@ -12,6 +12,19 @@ vi.mock("argon2", () => ({
   },
 }));
 
+// Mock google-auth-library
+vi.mock("google-auth-library", () => ({
+  OAuth2Client: vi.fn().mockImplementation(() => ({
+    verifyIdToken: vi.fn().mockResolvedValue({
+      getPayload: () => ({
+        sub: "google-sub-1",
+        email: "google@example.com",
+        email_verified: true,
+      }),
+    }),
+  })),
+}));
+
 // Mock otplib
 vi.mock("otplib", () => ({
   authenticator: {
@@ -435,139 +448,195 @@ describe("AuthService", () => {
     });
   });
 
-  describe("External Identity", () => {
-    it("linkGoogleIdentity links account", async () => {
+  describe("Google Federation", () => {
+    it("linkGoogleIdentity links account successfully", async () => {
+      db.limit.mockResolvedValueOnce([
+        {
+          userId: "user-1",
+          email: "google@example.com",
+          status: "active",
+          emailVerified: true,
+        },
+      ]); // getMe
       db.limit.mockResolvedValueOnce([]); // No existing mapping
+      db.returning.mockResolvedValueOnce([{ id: "mapping-1" }]);
+
       await service.linkGoogleIdentity({
         userId: "user-1",
-        providerSubject: "sub",
-        email: "x@x.com",
-        emailVerified: true,
+        idToken: "valid-token",
+        clientId: "client-id",
       });
+
       expect(db.insert).toHaveBeenCalled();
     });
 
-    it("linkGoogleIdentity throws if already linked to another user", async () => {
-      db.limit.mockResolvedValueOnce([{ id: "m-1", userId: "other-user" }]);
-      await expect(
-        service.linkGoogleIdentity({
+    it("linkGoogleIdentity throws if email mismatch", async () => {
+      db.limit.mockResolvedValueOnce([
+        {
           userId: "user-1",
-          providerSubject: "sub",
-          email: "x@x.com",
+          email: "other@example.com",
+          status: "active",
           emailVerified: true,
-        }),
-      ).rejects.toThrow(ApiError);
-    });
+        },
+      ]); // getMe mismatch
 
-    it("linkGoogleIdentity throws if email not verified", async () => {
       await expect(
         service.linkGoogleIdentity({
           userId: "user-1",
-          providerSubject: "sub",
-          email: "x@x.com",
-          emailVerified: false,
+          idToken: "valid-token",
+          clientId: "client-id",
         }),
-      ).rejects.toThrow(ApiError);
+      ).rejects.toThrow(/does not match your primary email/);
     });
 
-    it("unlinkGoogleIdentity deletes mapping", async () => {
-      await service.unlinkGoogleIdentity("user-1", "sub");
+    it("loginWithGoogle logs in existing linked user", async () => {
+      db.limit.mockResolvedValueOnce([{ userId: "user-1" }]); // existing mapping
+      db.limit.mockResolvedValueOnce([]); // MFA factors check
+      db.returning.mockResolvedValueOnce([{ id: "sess-1" }]); // Session creation
+
+      const result = await service.loginWithGoogle({
+        idToken: "valid-token",
+        clientId: "client-id",
+        ipAddress: "1.1.1.1",
+        userAgent: "ua",
+      });
+
+      expect(result.userId).toBe("user-1");
+    });
+
+    it("loginWithGoogle auto-links and logs in if email matches", async () => {
+      db.limit.mockResolvedValueOnce([]); // no existing mapping
+      db.limit.mockResolvedValueOnce([{ userId: "user-1" }]); // existing user by email
+      db.limit.mockResolvedValueOnce([]); // MFA factors check
+      db.returning.mockResolvedValueOnce([{ id: "sess-1" }]); // Session creation
+
+      const result = await service.loginWithGoogle({
+        idToken: "valid-token",
+        clientId: "client-id",
+        ipAddress: "1.1.1.1",
+        userAgent: "ua",
+      });
+
+      expect(result.userId).toBe("user-1");
+      expect(db.insert).toHaveBeenCalled();
+    });
+
+    it("loginWithGoogle signs up and logs in new user", async () => {
+      db.limit.mockResolvedValueOnce([]); // no existing mapping
+      db.limit.mockResolvedValueOnce([]); // no existing user by email
+      db.returning.mockResolvedValueOnce([{ id: "new-user-1" }]); // user creation
+      db.limit.mockResolvedValueOnce([]); // MFA factors check
+      db.returning.mockResolvedValueOnce([{ id: "sess-1" }]); // Session creation
+
+      const result = await service.loginWithGoogle({
+        idToken: "valid-token",
+        clientId: "client-id",
+        ipAddress: "1.1.1.1",
+        userAgent: "ua",
+      });
+
+      expect(result.userId).toBe("new-user-1");
+      expect(db.insert).toHaveBeenCalled();
+    });
+
+    it("unlinkSocialIdentity deletes mapping", async () => {
+      await service.unlinkSocialIdentity("user-1", "google", "sub");
       expect(db.delete).toHaveBeenCalled();
     });
+  });
 
-    describe("introspectToken", () => {
-      it("returns active: false for non-existent token", async () => {
-        db.select.mockReturnValue({
-          from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([]),
-            }),
+  describe("introspectToken", () => {
+    it("returns active: false for non-existent token", async () => {
+      db.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([]),
           }),
-        } as any);
+        }),
+      } as any);
 
-        const result = await service.introspectToken("invalid-token");
-        expect(result).toEqual({ active: false });
-      });
-
-      it("returns active: false for revoked/expired token", async () => {
-        db.select.mockReturnValue({
-          from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([
-                {
-                  userId: "user-1",
-                  sessionId: "session-1",
-                  expiresAt: new Date(Date.now() - 1000), // Expired
-                  revokedAt: null,
-                },
-              ]),
-            }),
-          }),
-        } as any);
-
-        const result = await service.introspectToken("expired-token");
-        expect(result).toEqual({ active: false });
-      });
-
-      it("returns active: true for valid token", async () => {
-        const expiresAt = new Date(Date.now() + 10000);
-        db.select.mockReturnValue({
-          from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([
-                {
-                  userId: "user-1",
-                  sessionId: "session-1",
-                  expiresAt,
-                  revokedAt: null,
-                },
-              ]),
-            }),
-          }),
-        } as any);
-
-        const result = await service.introspectToken("valid-token");
-        expect(result).toEqual({
-          active: true,
-          sub: "user-1",
-          sid: "session-1",
-          exp: Math.floor(expiresAt.getTime() / 1000),
-          permissions: [],
-          entitlements: {},
-        });
-      });
+      const result = await service.introspectToken("invalid-token");
+      expect(result).toEqual({ active: false });
     });
 
-    describe("session management", () => {
-      it("lists sessions", async () => {
-        db.select.mockReturnValue({
-          from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              orderBy: vi.fn().mockResolvedValue([{ id: "session-1" }]),
-            }),
+    it("returns active: false for revoked/expired token", async () => {
+      db.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([
+              {
+                userId: "user-1",
+                sessionId: "session-1",
+                expiresAt: new Date(Date.now() - 1000), // Expired
+                revokedAt: null,
+              },
+            ]),
           }),
-        } as any);
+        }),
+      } as any);
 
-        const result = await service.listSessions("user-1");
-        expect(result).toEqual([{ id: "session-1" }]);
-      });
+      const result = await service.introspectToken("expired-token");
+      expect(result).toEqual({ active: false });
+    });
 
-      it("revokes all sessions", async () => {
-        await service.revokeAllSessions("user-1");
-        expect(db.update).toHaveBeenCalled();
-        expect(db.insert).toHaveBeenCalled(); // audit log
-      });
+    it("returns active: true for valid token", async () => {
+      const expiresAt = new Date(Date.now() + 10000);
+      db.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([
+              {
+                userId: "user-1",
+                sessionId: "session-1",
+                expiresAt,
+                revokedAt: null,
+              },
+            ]),
+          }),
+        }),
+      } as any);
 
-      it("logs out by session", async () => {
-        await service.logoutBySession("session-1", "user-1");
-        expect(db.update).toHaveBeenCalled();
-        expect(db.insert).toHaveBeenCalled(); // security event
+      const result = await service.introspectToken("valid-token");
+      expect(result).toEqual({
+        active: true,
+        sub: "user-1",
+        sid: "session-1",
+        exp: Math.floor(expiresAt.getTime() / 1000),
+        permissions: [],
+        entitlements: {},
       });
+    });
+  });
 
-      it("revokes by token", async () => {
-        await service.revokeByToken("some-token");
-        expect(db.update).toHaveBeenCalled();
-      });
+  describe("session management", () => {
+    it("lists sessions", async () => {
+      db.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockResolvedValue([{ id: "session-1" }]),
+          }),
+        }),
+      } as any);
+
+      const result = await service.listSessions("user-1");
+      expect(result).toEqual([{ id: "session-1" }]);
+    });
+
+    it("revokes all sessions", async () => {
+      await service.revokeAllSessions("user-1");
+      expect(db.update).toHaveBeenCalled();
+      expect(db.insert).toHaveBeenCalled(); // audit log
+    });
+
+    it("logs out by session", async () => {
+      await service.logoutBySession("session-1", "user-1");
+      expect(db.update).toHaveBeenCalled();
+      expect(db.insert).toHaveBeenCalled(); // security event
+    });
+
+    it("revokes by token", async () => {
+      await service.revokeByToken("some-token");
+      expect(db.update).toHaveBeenCalled();
     });
   });
 });
