@@ -81,6 +81,38 @@ export class SessionRepository extends BaseRepository {
     return session;
   }
 
+  async rotateTokens(
+    sessionId: string,
+    currentRefreshTokenHash: string,
+    input: {
+      accessTokenHash: string;
+      refreshTokenHash: string;
+      expiresAt: Date;
+      refreshExpiresAt: Date;
+    },
+    tx?: DbTransaction | DbClient,
+  ) {
+    const db = tx ?? this.db;
+    const updated = await db
+      .update(userSessions)
+      .set({
+        accessTokenHash: input.accessTokenHash,
+        refreshTokenHash: input.refreshTokenHash,
+        expiresAt: input.expiresAt,
+        refreshExpiresAt: input.refreshExpiresAt,
+        lastSeenAt: new Date(),
+      })
+      .where(
+        and(
+          eq(userSessions.id, sessionId),
+          eq(userSessions.refreshTokenHash, currentRefreshTokenHash),
+          isNull(userSessions.revokedAt),
+        ),
+      )
+      .returning({ id: userSessions.id });
+    return updated.length > 0;
+  }
+
   async updateLastSeen(sessionId: string, tx?: DbTransaction | DbClient) {
     const db = tx ?? this.db;
     await db

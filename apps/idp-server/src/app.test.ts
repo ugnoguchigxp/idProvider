@@ -13,9 +13,11 @@ describe("Global Routes", () => {
       env: {
         OIDC_ISSUER: "https://issuer.com",
         OIDC_PORT: 3001,
+        OAUTH_CLIENT_ID: "client-id",
+        OAUTH_CLIENT_SECRET: "client-secret",
       },
       authService: {
-        revokeToken: vi.fn(),
+        revokeByToken: vi.fn().mockResolvedValue({ status: "accepted" }),
         authenticateAccessToken: vi.fn(),
       },
       userService: {},
@@ -58,5 +60,23 @@ describe("Global Routes", () => {
 
     const res = await app.request("/.well-known/openid-configuration");
     expect(res.status).toBe(502);
+  });
+
+  it("POST /oauth/revocation should revoke provided token", async () => {
+    const basic = Buffer.from("client-id:client-secret").toString("base64");
+    const res = await app.request("/oauth/revocation", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Basic ${basic}`,
+      },
+      body: JSON.stringify({ token: "at_1234567890abcdef" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(deps.authService.revokeByToken).toHaveBeenCalledWith(
+      "at_1234567890abcdef",
+    );
+    expect(await res.json()).toEqual({ status: "accepted" });
   });
 });

@@ -11,7 +11,7 @@
     "retention:dry-run": "tsx src/jobs/run-data-retention.ts --dry-run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "lint": "eslint src --ext .ts",
+    "lint": "biome check src",
     "db:seed": "tsx src/seed.ts"
   },
   "dependencies": {
@@ -39,7 +39,6 @@
     "@types/node": "^24.0.0",
     "@types/oidc-provider": "^9.5.0",
     "@vitest/coverage-v8": "^3.1.2",
-    "eslint": "^9.25.0",
     "msw": "^2.8.2",
     "tsx": "^4.19.3",
     "typescript": "^5.8.3",

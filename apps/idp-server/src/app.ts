@@ -60,13 +60,12 @@ export const buildApp = (deps: AppDependencies) => {
     "/oauth/revocation",
     publicEndpointAdapter({
       schema: oauthRevocationRequestSchema,
-      handler: async (c, _payload) => {
+      handler: async (c, payload) => {
         assertOAuthClientAuth(c.req.header("authorization"), {
           clientId: deps.env.OAUTH_CLIENT_ID,
           clientSecret: deps.env.OAUTH_CLIENT_SECRET,
         });
-        // await deps.authService.revokeByToken(payload.token);
-        return { status: "accepted" };
+        return deps.authService.revokeByToken(payload.token);
       },
     }),
   );

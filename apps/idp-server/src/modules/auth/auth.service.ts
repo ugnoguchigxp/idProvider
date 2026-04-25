@@ -1,8 +1,8 @@
-import { randomUUID } from "node:crypto";
 import type { ConfigService } from "@idp/auth-core";
 import { ApiError, ok } from "@idp/shared";
 import type pino from "pino";
 import type { AppEnv } from "../../config/env.js";
+import { hashPassword, verifyPassword } from "../../core/password.js";
 import { createOpaqueToken, hashOpaqueToken } from "../../core/tokens.js";
 import type { AuditRepository } from "../audit/audit.repository.js";
 import type { RBACService } from "../rbac/rbac.service.js";
@@ -31,10 +31,7 @@ export class AuthService {
     if (existing)
       throw new ApiError(409, "email_exists", "Email already registered");
 
-    // Password hashing (simplified)
-    const passwordHash = password; // TODO: bcrypt
-    const userId = randomUUID();
-
+    const passwordHash = await hashPassword(password);
     const user = await this.deps.userRepository.create({
       email,
       passwordHash,
@@ -42,7 +39,7 @@ export class AuthService {
 
     const verificationToken = createOpaqueToken("ev");
     await this.deps.verificationRepository.createEmailToken({
-      userId,
+      userId: user.id,
       tokenHash: hashOpaqueToken(verificationToken),
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
     });
@@ -57,7 +54,10 @@ export class AuthService {
     userAgent: string | null,
   ) {
     const user = await this.deps.userRepository.findWithPasswordByEmail(email);
-    if (!user || user.passwordHash !== password) {
+    const isValidPassword = user
+      ? await verifyPassword(password, user.passwordHash)
+      : false;
+    if (!user || !isValidPassword) {
       await this.deps.authRepository.recordAttempt(email, false, ipAddress);
       throw new ApiError(
         401,
@@ -86,7 +86,7 @@ export class AuthService {
     const tokenHash = hashOpaqueToken(refreshToken);
     const session =
       await this.deps.sessionRepository.findByRefreshTokenHash(tokenHash);
-    if (!session || session.expiresAt < new Date()) {
+    if (!session) {
       throw new ApiError(
         401,
         "invalid_token",
@@ -94,14 +94,59 @@ export class AuthService {
       );
     }
 
-    const newAccessToken = createOpaqueToken("at");
-    // Update session record...
-    return ok({ accessToken: newAccessToken, refreshToken });
+    const nextAccessToken = createOpaqueToken("at");
+    const nextRefreshToken = createOpaqueToken("rt");
+    const accessExpiresAt = new Date(
+      Date.now() + this.deps.env.ACCESS_TOKEN_TTL_SECONDS * 1000,
+    );
+    const refreshExpiresAt = new Date(
+      Date.now() + this.deps.env.REFRESH_TOKEN_TTL_SECONDS * 1000,
+    );
+
+    const rotated = await this.deps.sessionRepository.rotateTokens(
+      session.id,
+      tokenHash,
+      {
+        accessTokenHash: hashOpaqueToken(nextAccessToken),
+        refreshTokenHash: hashOpaqueToken(nextRefreshToken),
+        expiresAt: accessExpiresAt,
+        refreshExpiresAt,
+      },
+    );
+    if (!rotated) {
+      await this.deps.sessionRepository.revoke(session.id);
+      throw new ApiError(401, "invalid_token", "Refresh token reuse detected");
+    }
+
+    return ok({
+      accessToken: nextAccessToken,
+      refreshToken: nextRefreshToken,
+      accessExpiresAt: accessExpiresAt.toISOString(),
+      refreshExpiresAt: refreshExpiresAt.toISOString(),
+    });
   }
 
   async logout(sessionId: string) {
     await this.deps.sessionRepository.revoke(sessionId);
     return ok({ status: "logged_out" });
+  }
+
+  async revokeByToken(token: string) {
+    const tokenHash = hashOpaqueToken(token);
+    const accessSession =
+      await this.deps.sessionRepository.findByAccessTokenHash(tokenHash);
+    if (accessSession) {
+      await this.deps.sessionRepository.revoke(accessSession.id);
+      return ok({ status: "accepted" });
+    }
+
+    const refreshSession =
+      await this.deps.sessionRepository.findByRefreshTokenHash(tokenHash);
+    if (refreshSession) {
+      await this.deps.sessionRepository.revoke(refreshSession.id);
+    }
+
+    return ok({ status: "accepted" });
   }
 
   async authenticateAccessToken(accessToken: string) {
@@ -171,7 +216,7 @@ export class AuthService {
     }
 
     await this.deps.userRepository.update(ver.userId, {
-      passwordHash: newPassword,
+      passwordHash: await hashPassword(newPassword),
     });
     await this.deps.verificationRepository.consumePasswordToken(ver.id);
     return ok({ status: "reset" });
@@ -182,17 +227,21 @@ export class AuthService {
     ipAddress: string | null,
     userAgent: string | null,
   ) {
-    const _sessionId = randomUUID();
     const accessToken = createOpaqueToken("at");
     const refreshToken = createOpaqueToken("rt");
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const expiresAt = new Date(
+      Date.now() + this.deps.env.ACCESS_TOKEN_TTL_SECONDS * 1000,
+    );
+    const refreshExpiresAt = new Date(
+      Date.now() + this.deps.env.REFRESH_TOKEN_TTL_SECONDS * 1000,
+    );
 
     const session = await this.deps.sessionRepository.create({
       userId,
       accessTokenHash: hashOpaqueToken(accessToken),
       refreshTokenHash: hashOpaqueToken(refreshToken),
       expiresAt,
-      refreshExpiresAt: expiresAt, // Placeholder
+      refreshExpiresAt,
       ipAddress,
       userAgent,
     });

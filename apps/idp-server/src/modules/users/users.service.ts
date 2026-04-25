@@ -1,5 +1,6 @@
 import { ApiError, ok } from "@idp/shared";
 import type pino from "pino";
+import { hashPassword, verifyPassword } from "../../core/password.js";
 import type { AuditRepository } from "../audit/audit.repository.js";
 import type { IdentityRepository } from "./identity.repository.js";
 import type { UserRepository } from "./user.repository.js";
@@ -28,14 +29,17 @@ export class UserService {
     await this.verifyCurrentPassword(userId, currentPassword);
 
     await this.deps.userRepository.update(userId, {
-      passwordHash: newPassword,
+      passwordHash: await hashPassword(newPassword),
     });
     return ok({ status: "changed" });
   }
 
   async verifyCurrentPassword(userId: string, password: string) {
     const user = await this.deps.userRepository.findWithPasswordById(userId);
-    if (!user || user.passwordHash !== password) {
+    const isValidPassword = user
+      ? await verifyPassword(password, user.passwordHash)
+      : false;
+    if (!user || !isValidPassword) {
       throw new ApiError(
         401,
         "invalid_password",

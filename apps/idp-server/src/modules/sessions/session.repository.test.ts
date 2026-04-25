@@ -41,6 +41,22 @@ describe("SessionRepository", () => {
     });
   });
 
+  describe("rotateTokens", () => {
+    it("should update session token hashes", async () => {
+      db.then.mockImplementation((resolve: any) => resolve([{ id: "s1" }]));
+
+      const result = await repository.rotateTokens("s1", "old-rt", {
+        accessTokenHash: "new-at",
+        refreshTokenHash: "new-rt",
+        expiresAt: new Date(),
+        refreshExpiresAt: new Date(),
+      });
+
+      expect(db.update).toHaveBeenCalled();
+      expect(result).toBe(true);
+    });
+  });
+
   describe("revoke", () => {
     it("should set revokedAt", async () => {
       await repository.revoke("s1");

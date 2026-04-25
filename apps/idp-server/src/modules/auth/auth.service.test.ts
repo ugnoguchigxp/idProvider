@@ -31,6 +31,7 @@ describe("AuthService", () => {
         }),
         findByRefreshTokenHash: vi.fn(),
         findByAccessTokenHash: vi.fn(),
+        rotateTokens: vi.fn(),
         updateLastSeen: vi.fn(),
         revoke: vi.fn(),
       },
@@ -41,7 +42,10 @@ describe("AuthService", () => {
       },
       auditRepository: { createAuditLog: vi.fn() },
       configService: { getSocialLoginConfig: vi.fn() },
-      env: { ACCESS_TOKEN_EXPIRES_IN: "1h", REFRESH_TOKEN_EXPIRES_IN: "7d" },
+      env: {
+        ACCESS_TOKEN_TTL_SECONDS: 900,
+        REFRESH_TOKEN_TTL_SECONDS: 2_592_000,
+      },
       logger: { info: vi.fn(), error: vi.fn() },
     };
     service = new AuthService(deps);
@@ -56,6 +60,11 @@ describe("AuthService", () => {
       });
       const result = await service.signup("a@b.com", "pass1234", "Test User");
       expect(result.ok).toBe(true);
+      expect(deps.verificationRepository.createEmailToken).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: "u1",
+        }),
+      );
     });
   });
 
@@ -74,6 +83,64 @@ describe("AuthService", () => {
       await expect(
         service.login("a@b.com", "pass", "127.0.0.1", "UA"),
       ).rejects.toThrow(ApiError);
+    });
+  });
+
+  describe("revokeByToken", () => {
+    it("should revoke session matched by access token", async () => {
+      deps.sessionRepository.findByAccessTokenHash.mockResolvedValue({
+        id: "s1",
+      });
+
+      const result = await service.revokeByToken("access-token");
+
+      expect(result.ok).toBe(true);
+      expect(deps.sessionRepository.revoke).toHaveBeenCalledWith("s1");
+    });
+
+    it("should revoke session matched by refresh token", async () => {
+      deps.sessionRepository.findByAccessTokenHash.mockResolvedValue(null);
+      deps.sessionRepository.findByRefreshTokenHash.mockResolvedValue({
+        id: "s2",
+      });
+
+      const result = await service.revokeByToken("refresh-token");
+
+      expect(result.ok).toBe(true);
+      expect(deps.sessionRepository.revoke).toHaveBeenCalledWith("s2");
+    });
+  });
+
+  describe("refresh", () => {
+    it("should rotate refresh token and persist new token hashes", async () => {
+      deps.sessionRepository.findByRefreshTokenHash.mockResolvedValue({
+        id: "s1",
+      });
+      deps.sessionRepository.rotateTokens.mockResolvedValue(true);
+
+      const result = await service.refresh("refresh-token");
+
+      expect(result.ok).toBe(true);
+      expect(deps.sessionRepository.rotateTokens).toHaveBeenCalledWith(
+        "s1",
+        expect.any(String),
+        expect.objectContaining({
+          accessTokenHash: expect.any(String),
+          refreshTokenHash: expect.any(String),
+          expiresAt: expect.any(Date),
+          refreshExpiresAt: expect.any(Date),
+        }),
+      );
+    });
+
+    it("should revoke the session if refresh rotation fails", async () => {
+      deps.sessionRepository.findByRefreshTokenHash.mockResolvedValue({
+        id: "s1",
+      });
+      deps.sessionRepository.rotateTokens.mockResolvedValue(false);
+
+      await expect(service.refresh("refresh-token")).rejects.toThrow(ApiError);
+      expect(deps.sessionRepository.revoke).toHaveBeenCalledWith("s1");
     });
   });
 
