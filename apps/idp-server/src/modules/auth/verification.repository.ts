@@ -45,18 +45,78 @@ export class VerificationRepository extends BaseRepository {
 
   async consumeEmailToken(id: string, tx?: DbTransaction | DbClient) {
     const db = tx ?? this.db;
-    await db
+    const updated = await db
       .update(emailVerificationTokens)
       .set({ consumedAt: new Date() })
-      .where(eq(emailVerificationTokens.id, id));
+      .where(
+        and(
+          eq(emailVerificationTokens.id, id),
+          isNull(emailVerificationTokens.consumedAt),
+        ),
+      )
+      .returning({ id: emailVerificationTokens.id });
+    return updated.length > 0;
   }
 
   async consumePasswordToken(id: string, tx?: DbTransaction | DbClient) {
     const db = tx ?? this.db;
-    await db
+    const updated = await db
       .update(passwordResetTokens)
       .set({ consumedAt: new Date() })
-      .where(eq(passwordResetTokens.id, id));
+      .where(
+        and(
+          eq(passwordResetTokens.id, id),
+          isNull(passwordResetTokens.consumedAt),
+        ),
+      )
+      .returning({ id: passwordResetTokens.id });
+    return updated.length > 0;
+  }
+
+  async consumeValidEmailTokenByHash(
+    tokenHash: string,
+    tx?: DbTransaction | DbClient,
+  ) {
+    const db = tx ?? this.db;
+    const now = new Date();
+    const updated = await db
+      .update(emailVerificationTokens)
+      .set({ consumedAt: now })
+      .where(
+        and(
+          eq(emailVerificationTokens.tokenHash, tokenHash),
+          isNull(emailVerificationTokens.consumedAt),
+          gt(emailVerificationTokens.expiresAt, now),
+        ),
+      )
+      .returning({
+        id: emailVerificationTokens.id,
+        userId: emailVerificationTokens.userId,
+      });
+    return updated[0] ?? null;
+  }
+
+  async consumeValidPasswordTokenByHash(
+    tokenHash: string,
+    tx?: DbTransaction | DbClient,
+  ) {
+    const db = tx ?? this.db;
+    const now = new Date();
+    const updated = await db
+      .update(passwordResetTokens)
+      .set({ consumedAt: now })
+      .where(
+        and(
+          eq(passwordResetTokens.tokenHash, tokenHash),
+          isNull(passwordResetTokens.consumedAt),
+          gt(passwordResetTokens.expiresAt, now),
+        ),
+      )
+      .returning({
+        id: passwordResetTokens.id,
+        userId: passwordResetTokens.userId,
+      });
+    return updated[0] ?? null;
   }
 
   async createEmailToken(

@@ -8,8 +8,8 @@ describe("password", () => {
     await expect(verifyPassword("wrong", hash)).resolves.toBe(false);
   });
 
-  it("supports legacy plaintext fallback", async () => {
-    await expect(verifyPassword("legacy", "legacy")).resolves.toBe(true);
+  it("rejects non-argon2 hashes", async () => {
+    await expect(verifyPassword("legacy", "legacy")).resolves.toBe(false);
     await expect(verifyPassword("wrong", "legacy")).resolves.toBe(false);
   });
 });

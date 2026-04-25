@@ -60,13 +60,18 @@ describe("User Routes", () => {
       rateLimiter: { consume: vi.fn().mockResolvedValue({ allowed: true }) },
       keyStore: { getPublicJwks: vi.fn() },
       configService: {
-        getSocialLoginConfig: vi.fn(),
+        getSocialLoginConfig: vi.fn().mockResolvedValue({
+          providerEnabled: true,
+          clientId: "google-client-id",
+          clientSecret: "google-client-secret",
+        }),
         getNotificationConfig: vi.fn(),
         getEmailTemplateConfig: vi.fn(),
       },
       env: {
         OIDC_ISSUER: "https://issuer.com",
         RATE_LIMIT_PROFILE_UPDATE_PER_10_MIN: 30,
+        GOOGLE_CLIENT_ID: "google-client-id",
       },
       logger: { info: vi.fn(), error: vi.fn() },
     };

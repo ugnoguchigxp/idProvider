@@ -44,6 +44,23 @@ export class SessionRepository extends BaseRepository {
     return result[0] ?? null;
   }
 
+  async findByAccessTokenHashAny(hash: string, tx?: DbTransaction | DbClient) {
+    const db = tx ?? this.db;
+    const result = await db
+      .select({
+        id: userSessions.id,
+        userId: userSessions.userId,
+        expiresAt: userSessions.expiresAt,
+        revokedAt: userSessions.revokedAt,
+        userStatus: users.status,
+      })
+      .from(userSessions)
+      .innerJoin(users, eq(userSessions.userId, users.id))
+      .where(eq(userSessions.accessTokenHash, hash))
+      .limit(1);
+    return result[0] ?? null;
+  }
+
   async findByRefreshTokenHash(hash: string, tx?: DbTransaction | DbClient) {
     const db = tx ?? this.db;
     const result = await db

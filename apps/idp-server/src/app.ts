@@ -8,6 +8,7 @@ import { traceMiddleware } from "./middleware/trace.js";
 import { createAuthRoutes } from "./modules/auth/auth.routes.js";
 import { createConfigRoutes } from "./modules/config/config.routes.js";
 import { createMfaRoutes } from "./modules/mfa/mfa.routes.js";
+import { createRbacRoutes } from "./modules/rbac/rbac.routes.js";
 import { createSessionRoutes } from "./modules/sessions/sessions.routes.js";
 import { createUserRoutes } from "./modules/users/users.routes.js";
 
@@ -22,7 +23,11 @@ export const buildApp = (deps: AppDependencies) => {
   app.route("/", createUserRoutes(deps));
   app.route("/", createSessionRoutes(deps));
   app.route("/", createMfaRoutes(deps));
+  app.route("/", createRbacRoutes(deps));
   app.route("/", createConfigRoutes(deps));
+
+  app.get("/healthz", (c) => c.json({ ok: true }));
+  app.get("/readyz", (c) => c.json({ ready: true }));
 
   const issuer = deps.env.OIDC_ISSUER;
 

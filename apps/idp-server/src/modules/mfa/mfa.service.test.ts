@@ -1,4 +1,5 @@
 import { ApiError } from "@idp/shared";
+import { authenticator } from "otplib";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MfaService } from "./mfa.service.js";
 
@@ -33,7 +34,7 @@ describe("MfaService", () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.factorId).toBeDefined();
-        expect(result.value.secret).toBe("dummy-secret");
+        expect(result.value.secret.length).toBeGreaterThan(0);
       }
       expect(deps.mfaRepository.create).toHaveBeenCalled();
     });
@@ -41,14 +42,17 @@ describe("MfaService", () => {
 
   describe("verifyMfa", () => {
     it("should successfully verify mfa if factor belongs to user", async () => {
+      const secret = authenticator.generateSecret();
+      const code = authenticator.generate(secret);
       deps.mfaRepository.findByFactorId.mockResolvedValue({
         id: "f1",
         userId: "u1",
         type: "totp",
+        secret,
         enabled: true,
       });
 
-      const result = await mfaService.verifyMfa("u1", "f1", "123456");
+      const result = await mfaService.verifyMfa("u1", "f1", code);
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.status).toBe("verified");
@@ -56,10 +60,13 @@ describe("MfaService", () => {
     });
 
     it("should return recovery codes on first verification", async () => {
+      const secret = authenticator.generateSecret();
+      const code = authenticator.generate(secret);
       deps.mfaRepository.findByFactorId.mockResolvedValue({
         id: "f1",
         userId: "u1",
         type: "totp",
+        secret,
         enabled: true,
       });
       deps.mfaRecoveryService.generateCodesIfMissing.mockResolvedValueOnce({
@@ -67,7 +74,7 @@ describe("MfaService", () => {
         value: { recoveryCodes: ["ABCDE-FGHJK-LMNPQ-RSTUV"] },
       });
 
-      const result = await mfaService.verifyMfa("u1", "f1", "123456");
+      const result = await mfaService.verifyMfa("u1", "f1", code);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -80,6 +87,7 @@ describe("MfaService", () => {
         id: "f1",
         userId: "other",
         type: "totp",
+        secret: authenticator.generateSecret(),
       });
 
       await expect(mfaService.verifyMfa("u1", "f1", "123456")).rejects.toThrow(

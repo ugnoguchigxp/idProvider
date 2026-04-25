@@ -13,5 +13,5 @@ export const verifyPassword = async (
   if (storedHash.startsWith(argon2Prefix)) {
     return argon2.verify(storedHash, password);
   }
-  return storedHash === password;
+  return false;
 };

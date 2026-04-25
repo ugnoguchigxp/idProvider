@@ -5,10 +5,14 @@ import {
   mfaEnrollRequestSchema,
   mfaRecoveryRegenerateRequestSchema,
   mfaVerifyRequestSchema,
+  webauthnAuthenticationOptionsSchema,
+  webauthnAuthenticationVerifySchema,
   webauthnRegistrationVerifySchema,
 } from "@idp/shared";
 import { Hono } from "hono";
 import { authenticatedEndpointAdapter } from "../../adapters/authenticated-endpoint-adapter.js";
+import { publicEndpointAdapter } from "../../adapters/public-endpoint-adapter.js";
+import { getIpAddress } from "../../utils/ip-address.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { UserService } from "../users/users.service.js";
 import type { MfaService } from "./mfa.service.js";
@@ -27,6 +31,57 @@ export const createMfaRoutes = (deps: MfaRoutesDependencies) => {
 
   const authenticate = deps.authService.authenticateAccessToken.bind(
     deps.authService,
+  );
+
+  app.post(
+    "/v1/mfa/webauthn/authenticate/options",
+    publicEndpointAdapter({
+      schema: webauthnAuthenticationOptionsSchema,
+      handler: async (_c, payload) => {
+        const userId = await deps.userService.findActiveUserIdByEmail(
+          payload.email,
+        );
+        if (!userId) {
+          throw new ApiError(
+            401,
+            "invalid_credentials",
+            "Invalid authentication request",
+          );
+        }
+        return deps.webauthnService.generateAuthenticationOptions(userId);
+      },
+    }),
+  );
+
+  app.post(
+    "/v1/mfa/webauthn/authenticate/verify",
+    publicEndpointAdapter({
+      schema: webauthnAuthenticationVerifySchema,
+      handler: async (c, payload) => {
+        const userId = await deps.userService.findActiveUserIdByEmail(
+          payload.email,
+        );
+        if (!userId) {
+          throw new ApiError(
+            401,
+            "invalid_credentials",
+            "Invalid authentication request",
+          );
+        }
+
+        await deps.webauthnService.verifyAuthenticationResponse(
+          userId,
+          payload.response,
+        );
+        const result = await deps.authService.createSessionForUser(
+          userId,
+          getIpAddress(c.req.header("x-forwarded-for")),
+          c.req.header("user-agent") || null,
+        );
+        if (!result.ok) throw result.error;
+        return result.value;
+      },
+    }),
   );
 
   app.post(

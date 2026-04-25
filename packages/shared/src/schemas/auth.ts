@@ -118,14 +118,33 @@ export const passwordResetConfirmRequestSchema = z.object({
   newPassword: z.string().min(12).max(128),
 });
 
-export const googleLoginRequestSchema = z.object({
-  idToken: z.string().min(1),
-  mfaCode: z
-    .string()
-    .regex(/^\d{6}$/)
-    .optional(),
-  mfaFactorId: z.string().uuid().optional(),
-});
+export const googleLoginRequestSchema = z
+  .object({
+    idToken: z.string().min(1),
+    mfaCode: z
+      .string()
+      .regex(/^\d{6}$/)
+      .optional(),
+    mfaFactorId: z.string().uuid().optional(),
+    mfaRecoveryCode: z
+      .string()
+      .trim()
+      .min(20)
+      .max(32)
+      .regex(/^[A-Za-z2-9 -]+$/)
+      .optional(),
+  })
+  .superRefine((data, ctx) => {
+    const hasMfaCode = Boolean(data.mfaCode);
+    const hasMfaFactorId = Boolean(data.mfaFactorId);
+    if (hasMfaCode !== hasMfaFactorId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "mfaCode and mfaFactorId must be provided together",
+        path: hasMfaCode ? ["mfaFactorId"] : ["mfaCode"],
+      });
+    }
+  });
 
 export const googleLinkRequestSchema = z.object({
   idToken: z.string().min(1),

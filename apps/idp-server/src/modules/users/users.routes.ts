@@ -1,3 +1,4 @@
+import type { ConfigService } from "@idp/auth-core";
 import {
   ApiError,
   accountDeletionRequestSchema,
@@ -20,6 +21,7 @@ export type UserRoutesDependencies = {
   userService: UserService;
   authService: AuthService;
   accountDeletionService: AccountDeletionService;
+  configService: ConfigService;
   rateLimiter: RateLimiter;
   env: AppEnv;
 };
@@ -101,10 +103,12 @@ export const createUserRoutes = (deps: UserRoutesDependencies) => {
           auth.userId,
           payload.currentPassword,
         );
+        const social = await deps.configService.getSocialLoginConfig("google");
+        const clientId = social.clientId || deps.env.GOOGLE_CLIENT_ID;
         const result = await deps.userService.linkGoogleIdentity({
           userId: auth.userId,
           idToken: payload.idToken,
-          clientId: "",
+          clientId,
         });
         if (!result.ok) throw result.error;
         return result.value;

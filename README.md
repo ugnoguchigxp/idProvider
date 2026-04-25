@@ -117,7 +117,7 @@ pnpm dev
 - 基本
   - `NODE_ENV`, `PORT`, `OIDC_PORT`, `OIDC_ISSUER`
 - OAuth クライアント認証
-  - `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET`
+  - `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET`, `OIDC_CLIENT_REDIRECT_URIS`
 - トークン有効期限
   - `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_SECONDS`
 - パスワードハッシュ
@@ -171,6 +171,7 @@ pnpm dev
   - `POST /v1/logout`
   - `POST /v1/mfa/enroll`
   - `POST /v1/mfa/verify`
+  - `POST /v1/mfa/recovery-codes/regenerate`
   - `GET /v1/mfa/webauthn/register/options`
   - `POST /v1/mfa/webauthn/register/verify`
   - `POST /v1/password/change`

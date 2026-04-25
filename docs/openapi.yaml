@@ -468,6 +468,90 @@ components:
         permissionKey:
           type: string
 
+    EntitlementCheckRequest:
+      type: object
+      additionalProperties: false
+      required: [key]
+      properties:
+        key:
+          type: string
+          minLength: 1
+          maxLength: 128
+        organizationId:
+          type: string
+          format: uuid
+        groupId:
+          type: string
+          format: uuid
+        quantity:
+          type: integer
+          minimum: 1
+
+    EntitlementCheckResponse:
+      type: object
+      additionalProperties: true
+      required: [allowed]
+      properties:
+        allowed:
+          type: boolean
+        reason:
+          type: string
+        scope:
+          type: string
+        value:
+          type: [object, boolean]
+
+    SocialLoginUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [providerEnabled, clientId, clientSecret]
+      properties:
+        providerEnabled:
+          type: boolean
+        clientId:
+          type: string
+          maxLength: 255
+        clientSecret:
+          type: string
+          maxLength: 255
+
+    NotificationUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [notificationRecipients, alertLevels]
+      properties:
+        notificationRecipients:
+          type: array
+          items:
+            type: string
+            format: email
+          maxItems: 50
+        alertLevels:
+          type: array
+          items:
+            type: string
+            enum: [Critical, Warning]
+          minItems: 1
+          maxItems: 2
+
+    EmailTemplateUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [templateKey, subject, body]
+      properties:
+        templateKey:
+          type: string
+          minLength: 1
+          maxLength: 128
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 200
+        body:
+          type: string
+          minLength: 1
+          maxLength: 20000
+
     Session:
       type: object
       additionalProperties: false
@@ -1210,6 +1294,56 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /v1/mfa/recovery-codes/regenerate:
+    post:
+      tags: [auth-protected]
+      operationId: postV1MfaRecoveryCodesRegenerate
+      summary: Regenerate MFA recovery codes
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                currentPassword:
+                  type: string
+                  minLength: 8
+                  maxLength: 128
+                mfaCode:
+                  type: string
+                  pattern: '^\\d{6}$'
+                mfaFactorId:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Recovery codes regenerated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [recoveryCodes]
+                properties:
+                  recoveryCodes:
+                    type: array
+                    items:
+                      type: string
+        '400':
+          description: Reauthentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /v1/mfa/webauthn/authenticate/options:
     post:
       tags: [auth-public]
@@ -1331,6 +1465,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthorizationCheckResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/entitlements/check:
+    post:
+      tags: [auth-protected]
+      operationId: postV1EntitlementsCheck
+      summary: Check entitlement access
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EntitlementCheckRequest'
+      responses:
+        '200':
+          description: Entitlement decision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntitlementCheckResponse'
         '401':
           description: Unauthorized
           content:
@@ -1468,6 +1629,144 @@ paths:
                 $ref: '#/components/schemas/UnlinkedResponse'
         '401':
           description: Unauthorized or invalid password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/admin/configs:
+    get:
+      tags: [auth-protected]
+      operationId: getV1AdminConfigs
+      summary: Get admin runtime configs
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current config snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [socialLogin, notifications, emailTemplates]
+                properties:
+                  socialLogin:
+                    type: object
+                    additionalProperties: true
+                  notifications:
+                    type: object
+                    additionalProperties: true
+                  emailTemplates:
+                    type: object
+                    additionalProperties: true
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/admin/configs/social-login/google:
+    put:
+      tags: [auth-protected]
+      operationId: putV1AdminConfigsSocialLoginGoogle
+      summary: Update Google social login config
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SocialLoginUpdateRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusOkResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/admin/configs/notifications:
+    put:
+      tags: [auth-protected]
+      operationId: putV1AdminConfigsNotifications
+      summary: Update notification config
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationUpdateRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusOkResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/admin/configs/email-template:
+    put:
+      tags: [auth-protected]
+      operationId: putV1AdminConfigsEmailTemplate
+      summary: Update email template config
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailTemplateUpdateRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusOkResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
           content:
             application/json:
               schema:

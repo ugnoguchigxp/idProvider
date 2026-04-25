@@ -1,7 +1,9 @@
 import type { ConfigService } from "@idp/auth-core";
 import {
   ApiError,
+  emailTemplateUpdateSchema,
   emptyRequestSchema,
+  notificationUpdateSchema,
   socialLoginUpdateSchema,
 } from "@idp/shared";
 import { Hono } from "hono";
@@ -67,6 +69,38 @@ export const createConfigRoutes = (deps: AdminRoutesDependencies) => {
       handler: async (_c, payload, auth) => {
         await assertAdmin(deps, auth.userId);
         await deps.configService.updateSocialLoginConfig("google", payload);
+        return { status: "ok" };
+      },
+    }),
+  );
+
+  app.put(
+    "/v1/admin/configs/notifications",
+    authenticatedEndpointAdapter({
+      schema: notificationUpdateSchema,
+      authenticate,
+      handler: async (_c, payload, auth) => {
+        await assertAdmin(deps, auth.userId);
+        await deps.configService.updateNotificationConfig(payload);
+        return { status: "ok" };
+      },
+    }),
+  );
+
+  app.put(
+    "/v1/admin/configs/email-template",
+    authenticatedEndpointAdapter({
+      schema: emailTemplateUpdateSchema,
+      authenticate,
+      handler: async (_c, payload, auth) => {
+        await assertAdmin(deps, auth.userId);
+        await deps.configService.updateEmailTemplateConfig(
+          payload.templateKey,
+          {
+            subject: payload.subject,
+            body: payload.body,
+          },
+        );
         return { status: "ok" };
       },
     }),

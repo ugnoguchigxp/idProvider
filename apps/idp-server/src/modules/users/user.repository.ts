@@ -135,6 +135,37 @@ export class UserRepository extends BaseRepository {
     }, tx);
   }
 
+  async createWithoutPassword(
+    input: {
+      email: string;
+      emailVerified?: boolean;
+      status?: "active" | "suspended" | "deleted";
+    },
+    tx?: DbTransaction | DbClient,
+  ) {
+    return this.runInTransaction(async (db) => {
+      const [user] = await db
+        .insert(users)
+        .values({ status: input.status ?? "active" })
+        .returning({
+          id: users.id,
+          status: users.status,
+          createdAt: users.createdAt,
+        });
+
+      if (!user) throw new Error("Failed to create user");
+
+      await db.insert(userEmails).values({
+        userId: user.id,
+        email: input.email,
+        isPrimary: true,
+        isVerified: input.emailVerified ?? false,
+      });
+
+      return user;
+    }, tx);
+  }
+
   async update(
     userId: string,
     data: {

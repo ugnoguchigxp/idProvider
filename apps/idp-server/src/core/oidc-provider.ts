@@ -65,13 +65,18 @@ export const createOidcProvider = (
   jwks: { keys: Record<string, unknown>[] },
   accountResolver: OidcAccountResolver,
 ): Provider => {
+  const redirectUris =
+    env.OIDC_CLIENT_REDIRECT_URIS?.length > 0
+      ? env.OIDC_CLIENT_REDIRECT_URIS
+      : ["http://localhost:5173/callback"];
+
   const configuration: Configuration = {
     clients: [
       {
         client_id: env.OAUTH_CLIENT_ID,
         client_secret: env.OAUTH_CLIENT_SECRET,
         grant_types: ["authorization_code", "refresh_token"],
-        redirect_uris: ["http://localhost:5173/callback"],
+        redirect_uris: redirectUris,
         response_types: ["code"],
         token_endpoint_auth_method: "client_secret_basic",
       },

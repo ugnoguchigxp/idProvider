@@ -1,6 +1,19 @@
 import { ApiError } from "@idp/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { hashPassword } from "../../core/password.js";
 import { UserService } from "./users.service.js";
+
+vi.mock("google-auth-library", () => ({
+  OAuth2Client: vi.fn().mockImplementation(() => ({
+    verifyIdToken: vi.fn().mockResolvedValue({
+      getPayload: () => ({
+        sub: "google-sub-1",
+        email: "test@example.com",
+        email_verified: true,
+      }),
+    }),
+  })),
+}));
 
 describe("UserService", () => {
   let userService: UserService;
@@ -24,6 +37,8 @@ describe("UserService", () => {
         invalidate: vi.fn().mockResolvedValue(undefined),
       },
       identityRepository: {
+        findByProvider: vi.fn(),
+        create: vi.fn(),
         delete: vi.fn(),
       },
       auditRepository: {
@@ -189,9 +204,10 @@ describe("UserService", () => {
 
   describe("changePassword", () => {
     it("successfully changes password", async () => {
+      const oldHash = await hashPassword("old");
       deps.userRepository.findWithPasswordById.mockResolvedValue({
         id: "u1",
-        passwordHash: "old",
+        passwordHash: oldHash,
       });
       const result = await userService.changePassword("u1", "old", "new");
       expect(result.ok).toBe(true);
@@ -200,12 +216,26 @@ describe("UserService", () => {
 
   describe("linkGoogleIdentity", () => {
     it("returns ok", async () => {
+      deps.userRepository.findById.mockResolvedValue({
+        id: "u1",
+        email: "test@example.com",
+        status: "active",
+        profile: {},
+      });
+      deps.identityRepository.findByProvider.mockResolvedValue(null);
+
       const result = await userService.linkGoogleIdentity({
         userId: "u1",
         idToken: "itok",
         clientId: "cid",
       });
       expect(result.ok).toBe(true);
+      expect(deps.identityRepository.create).toHaveBeenCalledWith({
+        userId: "u1",
+        provider: "google",
+        providerSubject: "google-sub-1",
+        email: "test@example.com",
+      });
     });
   });
 
@@ -222,9 +252,10 @@ describe("UserService", () => {
 
   describe("verifyCurrentPassword", () => {
     it("passes if password matches", async () => {
+      const passwordHash = await hashPassword("pass");
       deps.userRepository.findWithPasswordById.mockResolvedValue({
         id: "u1",
-        passwordHash: "pass",
+        passwordHash,
       });
       await expect(
         userService.verifyCurrentPassword("u1", "pass"),
@@ -232,9 +263,10 @@ describe("UserService", () => {
     });
 
     it("throws if password mismatch", async () => {
+      const passwordHash = await hashPassword("pass");
       deps.userRepository.findWithPasswordById.mockResolvedValue({
         id: "u1",
-        passwordHash: "pass",
+        passwordHash,
       });
       await expect(
         userService.verifyCurrentPassword("u1", "wrong"),

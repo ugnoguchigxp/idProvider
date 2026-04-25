@@ -10,6 +10,11 @@ describe("MFA Routes", () => {
     deps = {
       authService: {
         authenticateAccessToken: vi.fn().mockResolvedValue({ userId: "u1" }),
+        createSessionForUser: vi
+          .fn()
+          .mockResolvedValue(
+            ok({ accessToken: "at", refreshToken: "rt", mfaEnabled: false }),
+          ),
       },
       mfaService: {
         enrollMfa: vi
@@ -31,8 +36,13 @@ describe("MFA Routes", () => {
         getMe: vi
           .fn()
           .mockResolvedValue(ok({ id: "u1", email: "test@example.com" })),
+        findActiveUserIdByEmail: vi.fn().mockResolvedValue("u1"),
       },
       webauthnService: {
+        generateAuthenticationOptions: vi
+          .fn()
+          .mockResolvedValue({ challenge: "auth-chall" }),
+        verifyAuthenticationResponse: vi.fn().mockResolvedValue({ ok: true }),
         generateRegistrationOptions: vi
           .fn()
           .mockResolvedValue({ challenge: "chall" }),
@@ -124,5 +134,30 @@ describe("MFA Routes", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.recoveryCodes).toEqual(["ABCDE-FGHJK-LMNPQ-RSTUV"]);
+  });
+
+  it("POST /v1/mfa/webauthn/authenticate/options should return options", async () => {
+    const res = await app.request("/v1/mfa/webauthn/authenticate/options", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "test@example.com" }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.challenge).toBe("auth-chall");
+  });
+
+  it("POST /v1/mfa/webauthn/authenticate/verify should issue tokens", async () => {
+    const res = await app.request("/v1/mfa/webauthn/authenticate/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "test@example.com",
+        response: { id: "cid", rawId: "cid", type: "public-key", response: {} },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.accessToken).toBe("at");
   });
 });

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { ApiError, ok } from "@idp/shared";
+import { authenticator } from "otplib";
 import type { MfaRepository } from "./mfa.repository.js";
 import type { MfaRecoveryService } from "./mfa-recovery.service.js";
 
@@ -12,7 +13,7 @@ export class MfaService {
   constructor(private deps: MfaServiceDependencies) {}
 
   async enrollMfa(userId: string) {
-    const secret = "dummy-secret"; // Generate real secret
+    const secret = authenticator.generateSecret();
     const factorId = randomUUID();
     await this.deps.mfaRepository.create({
       userId,
@@ -26,14 +27,25 @@ export class MfaService {
   async verifyMfa(
     userId: string,
     factorId: string,
-    _code: string,
+    code: string,
     options: { issueRecoveryCodes?: boolean } = {},
   ) {
     const factor = await this.deps.mfaRepository.findByFactorId(factorId);
     if (!factor || factor.userId !== userId) {
       throw new ApiError(401, "invalid_mfa", "Invalid MFA factor");
     }
-    // Verify TOTP code logic...
+    if (factor.type !== "totp" || !factor.secret) {
+      throw new ApiError(
+        401,
+        "invalid_mfa",
+        "Invalid MFA factor for TOTP verification",
+      );
+    }
+    const valid = authenticator.check(code, factor.secret);
+    if (!valid) {
+      throw new ApiError(401, "invalid_mfa", "Invalid MFA code");
+    }
+
     if (options.issueRecoveryCodes !== false) {
       const generated =
         await this.deps.mfaRecoveryService?.generateCodesIfMissing(

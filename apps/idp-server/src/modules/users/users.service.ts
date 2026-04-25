@@ -1,5 +1,6 @@
 import { type DbClient, withTransaction } from "@idp/db";
 import { ApiError, ok, type UpdateUserProfileRequest } from "@idp/shared";
+import { OAuth2Client } from "google-auth-library";
 import type pino from "pino";
 import { hashPassword, verifyPassword } from "../../core/password.js";
 import type { AuditRepository } from "../audit/audit.repository.js";
@@ -37,6 +38,16 @@ const isUniqueViolation = (error: unknown): boolean => {
 
 export class UserService {
   constructor(private deps: UserServiceDependencies) {}
+
+  async findActiveUserIdByEmail(email: string) {
+    const user = await this.deps.userRepository.findByEmail(
+      email.toLowerCase(),
+    );
+    if (!user || user.status !== "active") {
+      return null;
+    }
+    return user.id;
+  }
 
   private async requireActiveUser(userId: string) {
     const user = await this.deps.userRepository.findById(userId);
@@ -164,12 +175,67 @@ export class UserService {
     }
   }
 
-  async linkGoogleIdentity(_params: {
+  async linkGoogleIdentity(params: {
     userId: string;
     idToken: string;
     clientId: string;
   }) {
-    // Logic to verify Google ID token and link
+    const client = new OAuth2Client(params.clientId);
+    let payload:
+      | { sub?: string; email?: string; email_verified?: boolean }
+      | undefined;
+    try {
+      const ticket = await client.verifyIdToken({
+        idToken: params.idToken,
+        audience: params.clientId,
+      });
+      payload = ticket.getPayload();
+    } catch {
+      throw new ApiError(
+        400,
+        "invalid_google_token",
+        "Invalid Google ID token",
+      );
+    }
+
+    if (!payload?.sub || !payload.email || !payload.email_verified) {
+      throw new ApiError(
+        400,
+        "invalid_google_token",
+        "Invalid Google ID token",
+      );
+    }
+
+    const me = await this.requireActiveUser(params.userId);
+    const email = payload.email.toLowerCase();
+    if (!me.email || me.email.toLowerCase() !== email) {
+      throw new ApiError(
+        400,
+        "email_mismatch",
+        "Google email must match your primary email",
+      );
+    }
+
+    const existing = await this.deps.identityRepository.findByProvider(
+      "google",
+      payload.sub,
+    );
+    if (existing && existing.userId !== params.userId) {
+      throw new ApiError(
+        409,
+        "google_identity_in_use",
+        "Google identity is already linked to another account",
+      );
+    }
+    if (!existing) {
+      await this.deps.identityRepository.create({
+        userId: params.userId,
+        provider: "google",
+        providerSubject: payload.sub,
+        email,
+      });
+    }
+
     return ok({ status: "linked" });
   }
 

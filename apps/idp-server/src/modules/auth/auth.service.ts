@@ -1,5 +1,6 @@
 import type { ConfigService } from "@idp/auth-core";
 import { ApiError, ok } from "@idp/shared";
+import { OAuth2Client } from "google-auth-library";
 import type pino from "pino";
 import type { AppEnv } from "../../config/env.js";
 import { hashPassword, verifyPassword } from "../../core/password.js";
@@ -10,6 +11,7 @@ import type { MfaService } from "../mfa/mfa.service.js";
 import type { MfaRecoveryService } from "../mfa/mfa-recovery.service.js";
 import type { RBACService } from "../rbac/rbac.service.js";
 import type { SessionRepository } from "../sessions/session.repository.js";
+import type { IdentityRepository } from "../users/identity.repository.js";
 import type { UserRepository } from "../users/user.repository.js";
 import type { AuthRepository } from "./auth.repository.js";
 import type { VerificationRepository } from "./verification.repository.js";
@@ -18,6 +20,7 @@ export type AuthServiceDependencies = {
   authRepository: AuthRepository;
   verificationRepository: VerificationRepository;
   userRepository: UserRepository;
+  identityRepository: IdentityRepository;
   sessionRepository: SessionRepository;
   rbacService: RBACService;
   auditRepository: AuditRepository;
@@ -31,6 +34,62 @@ export type AuthServiceDependencies = {
 
 export class AuthService {
   constructor(private deps: AuthServiceDependencies) {}
+
+  private async enforceMfaForLogin(
+    userId: string,
+    ipAddress: string | null,
+    mfa?:
+      | {
+          mfaCode?: string | undefined;
+          mfaFactorId?: string | undefined;
+          mfaRecoveryCode?: string | undefined;
+        }
+      | undefined,
+  ) {
+    const mfaEnabled = await this.deps.mfaService.hasEnabledMfa(userId);
+    if (!mfaEnabled) {
+      return false;
+    }
+
+    if (mfa?.mfaRecoveryCode) {
+      const rate = await this.deps.rateLimiter.consume(
+        `mfa-recovery:${userId}`,
+        this.deps.env.RATE_LIMIT_MFA_RECOVERY_PER_MIN,
+        60,
+      );
+      const ipRate = await this.deps.rateLimiter.consume(
+        `mfa-recovery-ip:${ipAddress ?? "unknown"}`,
+        this.deps.env.RATE_LIMIT_MFA_RECOVERY_PER_MIN,
+        60,
+      );
+      if (!rate.allowed || !ipRate.allowed) {
+        throw new ApiError(
+          429,
+          "rate_limited",
+          "Too many MFA recovery attempts",
+        );
+      }
+      await this.deps.mfaRecoveryService.consumeCode(
+        userId,
+        mfa.mfaRecoveryCode,
+      );
+      return true;
+    }
+
+    if (mfa?.mfaCode && mfa.mfaFactorId) {
+      await this.deps.mfaService.verifyMfa(
+        userId,
+        mfa.mfaFactorId,
+        mfa.mfaCode,
+        {
+          issueRecoveryCodes: false,
+        },
+      );
+      return true;
+    }
+
+    throw new ApiError(401, "mfa_required", "MFA verification is required");
+  }
 
   async signup(email: string, password: string, _displayName: string) {
     const existing = await this.deps.userRepository.findByEmail(email);
@@ -92,39 +151,11 @@ export class AuthService {
     }
 
     const mfaEnabled = await this.deps.mfaService.hasEnabledMfa(user.id);
+    if (mfaEnabled && !mfa?.mfaCode && !mfa?.mfaRecoveryCode) {
+      return ok({ mfaRequired: true, userId: user.id });
+    }
     if (mfaEnabled) {
-      if (mfa?.mfaRecoveryCode) {
-        const rate = await this.deps.rateLimiter.consume(
-          `mfa-recovery:${user.id}`,
-          this.deps.env.RATE_LIMIT_MFA_RECOVERY_PER_MIN,
-          60,
-        );
-        const ipRate = await this.deps.rateLimiter.consume(
-          `mfa-recovery-ip:${ipAddress ?? "unknown"}`,
-          this.deps.env.RATE_LIMIT_MFA_RECOVERY_PER_MIN,
-          60,
-        );
-        if (!rate.allowed || !ipRate.allowed) {
-          throw new ApiError(
-            429,
-            "rate_limited",
-            "Too many MFA recovery attempts",
-          );
-        }
-        await this.deps.mfaRecoveryService.consumeCode(
-          user.id,
-          mfa.mfaRecoveryCode,
-        );
-      } else if (mfa?.mfaCode && mfa.mfaFactorId) {
-        await this.deps.mfaService.verifyMfa(
-          user.id,
-          mfa.mfaFactorId,
-          mfa.mfaCode,
-          { issueRecoveryCodes: false },
-        );
-      } else {
-        return ok({ mfaRequired: true, userId: user.id });
-      }
+      await this.enforceMfaForLogin(user.id, ipAddress, mfa);
     }
 
     const session = await this.createSession(user.id, ipAddress, userAgent);
@@ -206,6 +237,37 @@ export class AuthService {
     return ok({ status: "accepted" });
   }
 
+  async introspectToken(token: string) {
+    const tokenHash = hashOpaqueToken(token);
+    const session =
+      await this.deps.sessionRepository.findByAccessTokenHashAny(tokenHash);
+
+    if (!session) {
+      return ok({ active: false });
+    }
+
+    const active =
+      !session.revokedAt &&
+      session.expiresAt > new Date() &&
+      session.userStatus === "active";
+
+    if (!active) {
+      return ok({ active: false });
+    }
+
+    const snapshot = await this.deps.rbacService.getAuthorizationSnapshot(
+      session.userId,
+    );
+    return ok({
+      active: true,
+      sub: session.userId,
+      sid: session.id,
+      exp: Math.floor(session.expiresAt.getTime() / 1000),
+      permissions: snapshot.permissions,
+      entitlements: snapshot.entitlements,
+    });
+  }
+
   async authenticateAccessToken(accessToken: string) {
     const tokenHash = hashOpaqueToken(accessToken);
     const session =
@@ -243,18 +305,22 @@ export class AuthService {
   }
 
   async confirmEmailVerification(token: string) {
-    const hash = hashOpaqueToken(token);
-    const ver = await this.deps.verificationRepository.findEmailToken(hash);
-    if (!ver) {
+    const consumed =
+      await this.deps.verificationRepository.consumeValidEmailTokenByHash(
+        hashOpaqueToken(token),
+      );
+    if (!consumed) {
       throw new ApiError(400, "invalid_token", "Invalid or expired token");
     }
-    const user = await this.deps.userRepository.findById(ver.userId);
+
+    const user = await this.deps.userRepository.findById(consumed.userId);
     if (!user || user.status !== "active") {
       throw new ApiError(401, "unauthorized", "Account is not active");
     }
 
-    await this.deps.userRepository.update(ver.userId, { emailVerified: true });
-    await this.deps.verificationRepository.consumeEmailToken(ver.id);
+    await this.deps.userRepository.update(consumed.userId, {
+      emailVerified: true,
+    });
     return ok({ status: "verified" });
   }
 
@@ -273,22 +339,161 @@ export class AuthService {
   }
 
   async confirmPasswordReset(token: string, newPassword: string) {
-    const hash = hashOpaqueToken(token);
-    const ver =
-      await this.deps.verificationRepository.findPasswordResetToken(hash);
-    if (!ver) {
+    const consumed =
+      await this.deps.verificationRepository.consumeValidPasswordTokenByHash(
+        hashOpaqueToken(token),
+      );
+    if (!consumed) {
       throw new ApiError(400, "invalid_token", "Invalid or expired token");
     }
-    const user = await this.deps.userRepository.findById(ver.userId);
+    const user = await this.deps.userRepository.findById(consumed.userId);
     if (!user || user.status !== "active") {
       throw new ApiError(401, "unauthorized", "Account is not active");
     }
 
-    await this.deps.userRepository.update(ver.userId, {
+    await this.deps.userRepository.update(consumed.userId, {
       passwordHash: await hashPassword(newPassword),
     });
-    await this.deps.verificationRepository.consumePasswordToken(ver.id);
     return ok({ status: "reset" });
+  }
+
+  async createSessionForUser(
+    userId: string,
+    ipAddress: string | null,
+    userAgent: string | null,
+  ) {
+    const user = await this.deps.userRepository.findById(userId);
+    if (!user || user.status !== "active") {
+      throw new ApiError(401, "unauthorized", "Account is not active");
+    }
+
+    const session = await this.createSession(userId, ipAddress, userAgent);
+    return ok({
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+      mfaEnabled: false,
+    });
+  }
+
+  async loginWithGoogle(
+    input: {
+      idToken: string;
+      ipAddress: string | null;
+      userAgent: string | null;
+    } & {
+      mfaCode?: string | undefined;
+      mfaFactorId?: string | undefined;
+      mfaRecoveryCode?: string | undefined;
+    },
+  ) {
+    if (input.mfaCode && input.mfaRecoveryCode) {
+      throw new ApiError(
+        400,
+        "mfa_method_conflict",
+        "Use either MFA code or recovery code",
+      );
+    }
+
+    const socialConfig =
+      await this.deps.configService.getSocialLoginConfig("google");
+    if (!socialConfig.providerEnabled) {
+      throw new ApiError(403, "provider_disabled", "Google login is disabled");
+    }
+    const clientId = socialConfig.clientId || this.deps.env.GOOGLE_CLIENT_ID;
+    const client = new OAuth2Client(clientId);
+    let payload:
+      | { sub?: string; email?: string; email_verified?: boolean }
+      | undefined;
+    try {
+      const ticket = await client.verifyIdToken({
+        idToken: input.idToken,
+        audience: clientId,
+      });
+      payload = ticket.getPayload();
+    } catch {
+      throw new ApiError(
+        400,
+        "invalid_google_token",
+        "Invalid Google ID token",
+      );
+    }
+
+    if (!payload?.sub || !payload.email || !payload.email_verified) {
+      throw new ApiError(
+        400,
+        "invalid_google_token",
+        "Invalid Google ID token",
+      );
+    }
+
+    const email = payload.email.toLowerCase();
+    const provider = "google";
+    const providerSubject = payload.sub;
+
+    const existingIdentity = await this.deps.identityRepository.findByProvider(
+      provider,
+      providerSubject,
+    );
+
+    let userId: string;
+    if (existingIdentity) {
+      userId = existingIdentity.userId;
+    } else {
+      const existingUser = await this.deps.userRepository.findByEmail(email);
+      if (existingUser) {
+        if (existingUser.status !== "active") {
+          throw new ApiError(401, "unauthorized", "Account is not active");
+        }
+        userId = existingUser.id;
+      } else {
+        const created = await this.deps.userRepository.createWithoutPassword({
+          email,
+          emailVerified: true,
+          status: "active",
+        });
+        userId = created.id;
+      }
+
+      await this.deps.identityRepository.create({
+        userId,
+        provider,
+        providerSubject,
+        email,
+      });
+    }
+
+    const user = await this.deps.userRepository.findById(userId);
+    if (!user || user.status !== "active") {
+      throw new ApiError(401, "unauthorized", "Account is not active");
+    }
+
+    const hasLocalPassword = Boolean(
+      await this.deps.userRepository.findWithPasswordById(userId),
+    );
+    if (hasLocalPassword) {
+      const mfaEnabled = await this.deps.mfaService.hasEnabledMfa(userId);
+      if (mfaEnabled && !input.mfaCode && !input.mfaRecoveryCode) {
+        return ok({ mfaRequired: true, userId });
+      }
+      if (mfaEnabled) {
+        await this.enforceMfaForLogin(userId, input.ipAddress, {
+          mfaCode: input.mfaCode,
+          mfaFactorId: input.mfaFactorId,
+          mfaRecoveryCode: input.mfaRecoveryCode,
+        });
+      }
+    }
+
+    const session = await this.createSession(
+      userId,
+      input.ipAddress,
+      input.userAgent,
+    );
+    return ok({
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+      mfaEnabled: false,
+    });
   }
 
   private async createSession(

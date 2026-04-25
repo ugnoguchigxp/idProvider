@@ -10,6 +10,16 @@ const envSchema = z
     OIDC_ISSUER: z.string().url().default("http://localhost:3001"),
     OAUTH_CLIENT_ID: z.string().min(1).default("local-client"),
     OAUTH_CLIENT_SECRET: z.string().min(1).default("local-client-secret"),
+    OIDC_CLIENT_REDIRECT_URIS: z
+      .string()
+      .default("http://localhost:5173/callback")
+      .transform((value) =>
+        value
+          .split(",")
+          .map((v) => v.trim())
+          .filter((v) => v.length > 0),
+      )
+      .pipe(z.array(z.string().url()).min(1)),
     ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
     REFRESH_TOKEN_TTL_SECONDS: z.coerce
       .number()

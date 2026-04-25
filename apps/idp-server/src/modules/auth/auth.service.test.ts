@@ -1,5 +1,6 @@
 import { ApiError } from "@idp/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { hashPassword } from "../../core/password.js";
 import { AuthService } from "./auth.service.js";
 
 describe("AuthService", () => {
@@ -13,16 +14,24 @@ describe("AuthService", () => {
         createEmailToken: vi.fn(),
         findEmailToken: vi.fn(),
         consumeEmailToken: vi.fn(),
+        consumeValidEmailTokenByHash: vi.fn(),
         createPasswordToken: vi.fn(),
         findPasswordResetToken: vi.fn(),
         consumePasswordToken: vi.fn(),
+        consumeValidPasswordTokenByHash: vi.fn(),
       },
       userRepository: {
         create: vi.fn(),
+        createWithoutPassword: vi.fn(),
         findByEmail: vi.fn(),
         findWithPasswordByEmail: vi.fn(),
+        findWithPasswordById: vi.fn(),
         findById: vi.fn().mockResolvedValue({ id: "u1", status: "active" }),
         update: vi.fn(),
+      },
+      identityRepository: {
+        findByProvider: vi.fn(),
+        create: vi.fn(),
       },
       sessionRepository: {
         create: vi.fn().mockResolvedValue({
@@ -32,6 +41,7 @@ describe("AuthService", () => {
         }),
         findByRefreshTokenHash: vi.fn(),
         findByAccessTokenHash: vi.fn(),
+        findByAccessTokenHashAny: vi.fn(),
         rotateTokens: vi.fn(),
         updateLastSeen: vi.fn(),
         revoke: vi.fn(),
@@ -80,20 +90,22 @@ describe("AuthService", () => {
 
   describe("login", () => {
     it("should return tokens on success", async () => {
+      const passwordHash = await hashPassword("pass");
       deps.userRepository.findWithPasswordByEmail.mockResolvedValue({
         id: "u1",
         status: "active",
-        passwordHash: "pass",
+        passwordHash,
       });
       const result = await service.login("a@b.com", "pass", "127.0.0.1", "UA");
       expect(result.ok).toBe(true);
     });
 
     it("should require MFA when enabled and no method is provided", async () => {
+      const passwordHash = await hashPassword("pass");
       deps.userRepository.findWithPasswordByEmail.mockResolvedValue({
         id: "u1",
         status: "active",
-        passwordHash: "pass",
+        passwordHash,
       });
       deps.mfaService.hasEnabledMfa.mockResolvedValue(true);
 
@@ -106,10 +118,11 @@ describe("AuthService", () => {
     });
 
     it("should consume recovery code when MFA is enabled", async () => {
+      const passwordHash = await hashPassword("pass");
       deps.userRepository.findWithPasswordByEmail.mockResolvedValue({
         id: "u1",
         status: "active",
-        passwordHash: "pass",
+        passwordHash,
       });
       deps.mfaService.hasEnabledMfa.mockResolvedValue(true);
 
@@ -225,7 +238,7 @@ describe("AuthService", () => {
     });
 
     it("should throw if token not found", async () => {
-      deps.verificationRepository.findPasswordResetToken.mockResolvedValue(
+      deps.verificationRepository.consumeValidPasswordTokenByHash.mockResolvedValue(
         null,
       );
       await expect(service.confirmPasswordReset("tok", "new")).rejects.toThrow(
@@ -236,7 +249,9 @@ describe("AuthService", () => {
 
   describe("confirmEmailVerification", () => {
     it("should throw if token not found", async () => {
-      deps.verificationRepository.findEmailToken.mockResolvedValue(null);
+      deps.verificationRepository.consumeValidEmailTokenByHash.mockResolvedValue(
+        null,
+      );
       await expect(service.confirmEmailVerification("tok")).rejects.toThrow(
         ApiError,
       );

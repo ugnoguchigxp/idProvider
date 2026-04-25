@@ -10,6 +10,7 @@ import {
   groups,
   gt,
   isNull,
+  or,
   permissions,
   rolePermissions,
   userRoles,
@@ -65,14 +66,10 @@ export class RBACRepository extends BaseRepository {
   ) {
     const db = tx ?? this.db;
     const now = new Date();
-    const _isActive = and(
+    const isActive = and(
       eq(entitlements.enabled, true),
-      and(isNull(entitlements.expiresAt), gt(entitlements.expiresAt, now)),
+      or(isNull(entitlements.expiresAt), gt(entitlements.expiresAt, now)),
     );
-
-    // This is a simplified version of the logic in AuthService.
-    // In a real migration, I'd move the scoped resolution logic here too.
-    // For brevity, I'll assume we want the highest priority entitlement.
 
     // User scope
     const userRows = await db
@@ -82,7 +79,7 @@ export class RBACRepository extends BaseRepository {
         and(
           eq(entitlements.key, input.key),
           eq(entitlements.userId, input.userId),
-          eq(entitlements.enabled, true),
+          isActive,
         ),
       )
       .orderBy(desc(entitlements.createdAt))
@@ -100,14 +97,53 @@ export class RBACRepository extends BaseRepository {
         and(
           eq(entitlements.key, input.key),
           eq(groupMemberships.userId, input.userId),
-          eq(entitlements.enabled, true),
+          isActive,
           input.groupId ? eq(groups.id, input.groupId) : undefined,
+          input.organizationId
+            ? eq(groups.organizationId, input.organizationId)
+            : undefined,
         ),
       )
       .orderBy(desc(entitlements.createdAt))
       .limit(1);
 
     if (groupRows[0]) return { ...groupRows[0].entitlements, scope: "group" };
+
+    if (!input.organizationId) {
+      return null;
+    }
+
+    const membershipRows = await db
+      .select({ organizationId: groups.organizationId })
+      .from(groupMemberships)
+      .innerJoin(groups, eq(groupMemberships.groupId, groups.id))
+      .where(
+        and(
+          eq(groupMemberships.userId, input.userId),
+          eq(groups.organizationId, input.organizationId),
+        ),
+      )
+      .limit(1);
+    if (membershipRows.length === 0) {
+      return null;
+    }
+
+    const organizationRows = await db
+      .select()
+      .from(entitlements)
+      .where(
+        and(
+          eq(entitlements.key, input.key),
+          eq(entitlements.organizationId, input.organizationId),
+          isActive,
+        ),
+      )
+      .orderBy(desc(entitlements.createdAt))
+      .limit(1);
+
+    if (organizationRows[0]) {
+      return { ...organizationRows[0], scope: "organization" };
+    }
 
     return null;
   }

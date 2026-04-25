@@ -80,6 +80,7 @@ const bootstrap = async () => {
     authRepository,
     verificationRepository,
     userRepository,
+    identityRepository,
     sessionRepository,
     rbacService,
     auditRepository,
