@@ -17,3 +17,14 @@
 ## 4. 連携Runbook
 - discovery/jwks失敗: `RB-DR-RESTORE`
 - login失敗急増: `RB-CRED-STUFFING`
+
+## 5. 実行コマンド
+```bash
+pnpm --filter @idp/idp-server synthetic:check
+```
+
+必要な環境変数:
+- `SYNTHETIC_BASE_URL`
+- `SYNTHETIC_LOGIN_EMAIL`
+- `SYNTHETIC_LOGIN_PASSWORD`
+- `SYNTHETIC_TIMEOUT_MS`（任意）

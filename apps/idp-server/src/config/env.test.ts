@@ -42,6 +42,15 @@ describe("loadEnv", () => {
     ).toThrow(/RETENTION_JOB_ENABLED/);
   });
 
+  it("parses boolean-like values for ADMIN_SOD_ENFORCED", () => {
+    const env = loadEnv({
+      ...baseEnv,
+      ADMIN_SOD_ENFORCED: "true",
+    });
+
+    expect(env.ADMIN_SOD_ENFORCED).toBe(true);
+  });
+
   it("requires metrics token in production when metrics are enabled", () => {
     expect(() =>
       loadEnv({
@@ -62,5 +71,22 @@ describe("loadEnv", () => {
         TURNSTILE_SITE_KEY: "",
       }),
     ).toThrow(/TURNSTILE_SECRET_KEY/);
+  });
+
+  it("parses RBAC cache rollout env values", () => {
+    const env = loadEnv({
+      ...baseEnv,
+      RBAC_CACHE_ENABLED: "true",
+      RBAC_CACHE_PERCENT: "50",
+      RBAC_CACHE_AUTH_TTL_SECONDS: "45",
+      RBAC_CACHE_ENT_TTL_SECONDS: "90",
+      RBAC_CACHE_NEGATIVE_TTL_SECONDS: "20",
+    });
+
+    expect(env.RBAC_CACHE_ENABLED).toBe(true);
+    expect(env.RBAC_CACHE_PERCENT).toBe(50);
+    expect(env.RBAC_CACHE_AUTH_TTL_SECONDS).toBe(45);
+    expect(env.RBAC_CACHE_ENT_TTL_SECONDS).toBe(90);
+    expect(env.RBAC_CACHE_NEGATIVE_TTL_SECONDS).toBe(20);
   });
 });

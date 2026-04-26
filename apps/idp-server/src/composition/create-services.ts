@@ -6,6 +6,7 @@ import { MfaService } from "../modules/mfa/mfa.service.js";
 import { MfaRecoveryService } from "../modules/mfa/mfa-recovery.service.js";
 import { OAuthClientService } from "../modules/oauth-clients/oauth-client.service.js";
 import { RBACService } from "../modules/rbac/rbac.service.js";
+import { RedisRBACCache } from "../modules/rbac/rbac-cache.js";
 import { SessionService } from "../modules/sessions/sessions.service.js";
 import { AccountDeletionService } from "../modules/users/account-deletion.service.js";
 import { NoopProfileCache } from "../modules/users/profile-cache.js";
@@ -34,7 +35,14 @@ export const createServices = ({
   onSecurityEvent,
   repositories,
 }: CreateServicesInput) => {
-  const rbacService = new RBACService(repositories.rbacRepository);
+  const rbacService = new RBACService(repositories.rbacRepository, {
+    cache: new RedisRBACCache(redis),
+    cacheEnabled: env.RBAC_CACHE_ENABLED,
+    cachePercent: env.RBAC_CACHE_PERCENT,
+    authTtlSeconds: env.RBAC_CACHE_AUTH_TTL_SECONDS,
+    entitlementTtlSeconds: env.RBAC_CACHE_ENT_TTL_SECONDS,
+    negativeTtlSeconds: env.RBAC_CACHE_NEGATIVE_TTL_SECONDS,
+  });
 
   const mfaRecoveryService = new MfaRecoveryService({
     mfaRecoveryRepository: repositories.mfaRecoveryRepository,

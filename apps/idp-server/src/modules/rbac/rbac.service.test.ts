@@ -4,6 +4,7 @@ import { RBACService } from "./rbac.service.js";
 describe("RBACService", () => {
   let service: RBACService;
   let repository: any;
+  let cache: any;
 
   beforeEach(() => {
     repository = {
@@ -11,7 +12,19 @@ describe("RBACService", () => {
       findEntitlement: vi.fn(),
       listAllActiveEntitlementKeys: vi.fn().mockResolvedValue([]),
     };
-    service = new RBACService(repository);
+    cache = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue(undefined),
+      deleteByPrefix: vi.fn().mockResolvedValue(undefined),
+    };
+    service = new RBACService(repository, {
+      cache,
+      cacheEnabled: true,
+      cachePercent: 100,
+      authTtlSeconds: 30,
+      entitlementTtlSeconds: 60,
+      negativeTtlSeconds: 15,
+    });
   });
 
   describe("getAuthorizationSnapshot", () => {
@@ -62,6 +75,21 @@ describe("RBACService", () => {
       });
       expect(result.allowed).toBe(false);
     });
+
+    it("should return cached authorization result when present", async () => {
+      cache.get.mockResolvedValue({
+        allowed: true,
+        permissionKey: "user:read",
+        source: "rbac",
+      });
+      const result = await service.authorizationCheck({
+        userId: "u1",
+        action: "read",
+        resource: "user",
+      });
+      expect(result.allowed).toBe(true);
+      expect(repository.listPermissionKeys).not.toHaveBeenCalled();
+    });
   });
 
   describe("entitlementCheck", () => {
@@ -85,7 +113,23 @@ describe("RBACService", () => {
         key: "k1",
       });
       expect(result.allowed).toBe(false);
-      expect(result.reason).toBe("not_entitled");
+      if (!result.allowed) {
+        expect(result.reason).toBe("not_entitled");
+      }
+    });
+
+    it("should return cached entitlement result when present", async () => {
+      cache.get.mockResolvedValue({
+        allowed: true,
+        value: true,
+        scope: "user",
+      });
+      const result = await service.entitlementCheck({
+        userId: "u1",
+        key: "k1",
+      });
+      expect(result.allowed).toBe(true);
+      expect(repository.findEntitlement).not.toHaveBeenCalled();
     });
   });
 });

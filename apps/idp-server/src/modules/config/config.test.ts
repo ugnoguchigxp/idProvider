@@ -27,7 +27,7 @@ describe("Config Routes Integration", () => {
       auditRepository: {
         createSecurityEvent: vi.fn(),
       },
-      env: { NODE_ENV: "test" },
+      env: { NODE_ENV: "test", ADMIN_SOD_ENFORCED: true },
       logger: { info: vi.fn(), error: vi.fn() },
     };
     app = buildApp(deps);
@@ -48,6 +48,11 @@ describe("Config Routes Integration", () => {
       headers: { Authorization: "Bearer at_mock_token_long_enough_16" },
     });
     expect(res.status).toBe(200);
+    expect(deps.rbacService.authorizationCheck).toHaveBeenCalledWith({
+      userId: "user-1",
+      resource: "admin.config",
+      action: "read",
+    });
   });
 
   it("GET /v1/admin/configs should return 403 if not admin", async () => {
@@ -73,6 +78,11 @@ describe("Config Routes Integration", () => {
       }),
     });
     expect(res.status).toBe(200);
+    expect(deps.rbacService.authorizationCheck).toHaveBeenCalledWith({
+      userId: "user-1",
+      resource: "admin.config",
+      action: "write",
+    });
     expect(deps.auditRepository.createSecurityEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: "admin.config.updated",

@@ -129,6 +129,15 @@ const envSchema = z
     ADMIN_SOD_ENFORCED: envBoolean(false),
     METRICS_ENABLED: envBoolean(true),
     METRICS_BEARER_TOKEN: z.string().default(""),
+    RBAC_CACHE_ENABLED: envBoolean(false),
+    RBAC_CACHE_PERCENT: z.coerce.number().int().min(0).max(100).default(0),
+    RBAC_CACHE_AUTH_TTL_SECONDS: z.coerce.number().int().positive().default(30),
+    RBAC_CACHE_ENT_TTL_SECONDS: z.coerce.number().int().positive().default(60),
+    RBAC_CACHE_NEGATIVE_TTL_SECONDS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(15),
     TURNSTILE_ENABLED: envBoolean(false),
     TURNSTILE_SECRET_KEY: z.string().default(""),
     TURNSTILE_SITE_KEY: z.string().default(""),

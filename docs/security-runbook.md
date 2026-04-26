@@ -112,6 +112,7 @@ Exit Criteria:
 ### RB-ADMIN-CONFIG: 管理設定不正変更
 Trigger:
 - 想定外の`/v1/admin/configs*` 更新
+- `admin.access.denied` が短時間に急増（権限昇格試行/設定不備疑い）
 
 Triage:
 ```sql

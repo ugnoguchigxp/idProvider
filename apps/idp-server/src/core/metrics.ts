@@ -15,6 +15,8 @@ type BotProtectedEndpoint =
   | "login"
   | "google_login"
   | "password_reset";
+type RbacCacheType = "auth" | "ent";
+type RbacCacheOperation = "get" | "set" | "del";
 
 const METRIC_PREFIX = "idp_";
 
@@ -102,6 +104,35 @@ const botBlockTotal = new Counter({
   registers: [register],
 });
 
+const rbacCacheHitTotal = new Counter({
+  name: `${METRIC_PREFIX}rbac_cache_hit_total`,
+  help: "RBAC cache hit count",
+  labelNames: ["type"],
+  registers: [register],
+});
+
+const rbacCacheMissTotal = new Counter({
+  name: `${METRIC_PREFIX}rbac_cache_miss_total`,
+  help: "RBAC cache miss count",
+  labelNames: ["type"],
+  registers: [register],
+});
+
+const rbacCacheErrorTotal = new Counter({
+  name: `${METRIC_PREFIX}rbac_cache_error_total`,
+  help: "RBAC cache operation errors",
+  labelNames: ["operation"],
+  registers: [register],
+});
+
+const rbacCacheLookupDurationSeconds = new Histogram({
+  name: `${METRIC_PREFIX}rbac_cache_lookup_duration_seconds`,
+  help: "RBAC cache lookup duration in seconds",
+  labelNames: ["type"],
+  buckets: [0.001, 0.003, 0.005, 0.01, 0.03, 0.05, 0.1],
+  registers: [register],
+});
+
 export const observeHttpRequest = (input: {
   method: string;
   path: string;
@@ -158,6 +189,25 @@ export const recordBotChallengeResult = (input: {
 
 export const recordBotBlock = (endpoint: BotProtectedEndpoint) => {
   botBlockTotal.inc({ endpoint });
+};
+
+export const recordRbacCacheHit = (type: RbacCacheType) => {
+  rbacCacheHitTotal.inc({ type });
+};
+
+export const recordRbacCacheMiss = (type: RbacCacheType) => {
+  rbacCacheMissTotal.inc({ type });
+};
+
+export const recordRbacCacheError = (operation: RbacCacheOperation) => {
+  rbacCacheErrorTotal.inc({ operation });
+};
+
+export const observeRbacCacheLookupDuration = (
+  type: RbacCacheType,
+  durationSeconds: number,
+) => {
+  rbacCacheLookupDurationSeconds.observe({ type }, durationSeconds);
 };
 
 export const metricsRegistry = register;

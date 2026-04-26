@@ -1,4 +1,11 @@
+import {
+  observeRbacCacheLookupDuration,
+  recordRbacCacheError,
+  recordRbacCacheHit,
+  recordRbacCacheMiss,
+} from "../../core/metrics.js";
 import type { RBACRepository } from "./rbac.repository.js";
+import { NoopRBACCache, type RBACCache } from "./rbac-cache.js";
 
 export type EntitlementValue = Record<string, unknown> | boolean;
 
@@ -8,7 +15,31 @@ export type AuthorizationSnapshot = {
 };
 
 export class RBACService {
-  constructor(private readonly rbacRepository: RBACRepository) {}
+  private readonly cache: RBACCache;
+  private readonly cacheEnabled: boolean;
+  private readonly cachePercent: number;
+  private readonly authTtlSeconds: number;
+  private readonly entitlementTtlSeconds: number;
+  private readonly negativeTtlSeconds: number;
+
+  constructor(
+    private readonly rbacRepository: RBACRepository,
+    options?: {
+      cache?: RBACCache;
+      cacheEnabled?: boolean;
+      cachePercent?: number;
+      authTtlSeconds?: number;
+      entitlementTtlSeconds?: number;
+      negativeTtlSeconds?: number;
+    },
+  ) {
+    this.cache = options?.cache ?? new NoopRBACCache();
+    this.cacheEnabled = options?.cacheEnabled ?? false;
+    this.cachePercent = options?.cachePercent ?? 0;
+    this.authTtlSeconds = options?.authTtlSeconds ?? 30;
+    this.entitlementTtlSeconds = options?.entitlementTtlSeconds ?? 60;
+    this.negativeTtlSeconds = options?.negativeTtlSeconds ?? 15;
+  }
 
   async getAuthorizationSnapshot(
     userId: string,
@@ -45,6 +76,34 @@ export class RBACService {
     organizationId?: string;
     groupId?: string;
   }) {
+    const shouldUseCache = this.shouldUseCache(input.userId);
+    const cacheKey = this.buildAuthorizationCacheKey(input);
+    if (shouldUseCache) {
+      const start = performance.now();
+      try {
+        const cached = await this.cache.get<{
+          allowed: boolean;
+          permissionKey: string;
+          source: "rbac" | null;
+        }>(cacheKey);
+        observeRbacCacheLookupDuration(
+          "auth",
+          (performance.now() - start) / 1000,
+        );
+        if (cached) {
+          recordRbacCacheHit("auth");
+          return cached;
+        }
+        recordRbacCacheMiss("auth");
+      } catch (_error: unknown) {
+        observeRbacCacheLookupDuration(
+          "auth",
+          (performance.now() - start) / 1000,
+        );
+        recordRbacCacheError("get");
+      }
+    }
+
     const permissions = await this.rbacRepository.listPermissionKeys(
       input.userId,
       {
@@ -60,11 +119,25 @@ export class RBACService {
       permissions.includes(resourceWildcardPermission) ||
       permissions.includes("*");
 
-    return {
+    const result = {
       allowed,
       permissionKey: requiredPermission,
       source: allowed ? "rbac" : null,
     };
+
+    if (shouldUseCache) {
+      try {
+        await this.cache.set(
+          cacheKey,
+          result,
+          result.allowed ? this.authTtlSeconds : this.negativeTtlSeconds,
+        );
+      } catch (_error: unknown) {
+        recordRbacCacheError("set");
+      }
+    }
+
+    return result;
   }
 
   async entitlementCheck(input: {
@@ -74,6 +147,37 @@ export class RBACService {
     groupId?: string;
     quantity?: number;
   }) {
+    const shouldUseCache = this.shouldUseCache(input.userId);
+    const cacheKey = this.buildEntitlementCacheKey(input);
+    if (shouldUseCache) {
+      const start = performance.now();
+      try {
+        const cached = await this.cache.get<
+          | {
+              allowed: false;
+              reason: "not_entitled" | "limit_exceeded";
+              limit?: number;
+            }
+          | { allowed: true; value: unknown; scope: string }
+        >(cacheKey);
+        observeRbacCacheLookupDuration(
+          "ent",
+          (performance.now() - start) / 1000,
+        );
+        if (cached) {
+          recordRbacCacheHit("ent");
+          return cached;
+        }
+        recordRbacCacheMiss("ent");
+      } catch (_error: unknown) {
+        observeRbacCacheLookupDuration(
+          "ent",
+          (performance.now() - start) / 1000,
+        );
+        recordRbacCacheError("get");
+      }
+    }
+
     const resolved = await this.rbacRepository.findEntitlement({
       userId: input.userId,
       key: input.key,
@@ -87,7 +191,18 @@ export class RBACService {
     });
 
     if (!resolved) {
-      return { allowed: false, reason: "not_entitled" };
+      const result = {
+        allowed: false as const,
+        reason: "not_entitled" as const,
+      };
+      if (shouldUseCache) {
+        try {
+          await this.cache.set(cacheKey, result, this.negativeTtlSeconds);
+        } catch (_error: unknown) {
+          recordRbacCacheError("set");
+        }
+      }
+      return result;
     }
 
     if (typeof input.quantity === "number") {
@@ -99,11 +214,93 @@ export class RBACService {
           ? Number((resolved.value as { limit: unknown }).limit)
           : Infinity;
       if (input.quantity > current) {
-        return { allowed: false, reason: "limit_exceeded", limit: current };
+        const result = {
+          allowed: false as const,
+          reason: "limit_exceeded" as const,
+          limit: current,
+        };
+        if (shouldUseCache) {
+          try {
+            await this.cache.set(cacheKey, result, this.negativeTtlSeconds);
+          } catch (_error: unknown) {
+            recordRbacCacheError("set");
+          }
+        }
+        return result;
       }
     }
 
-    return { allowed: true, value: resolved.value, scope: resolved.scope };
+    const result = {
+      allowed: true as const,
+      value: resolved.value,
+      scope: resolved.scope,
+    };
+    if (shouldUseCache) {
+      try {
+        await this.cache.set(cacheKey, result, this.entitlementTtlSeconds);
+      } catch (_error: unknown) {
+        recordRbacCacheError("set");
+      }
+    }
+    return result;
+  }
+
+  private shouldUseCache(userId: string): boolean {
+    if (!this.cacheEnabled) return false;
+    if (this.cachePercent <= 0) return false;
+    if (this.cachePercent >= 100) return true;
+    return this.bucket(userId) < this.cachePercent;
+  }
+
+  private bucket(value: string): number {
+    let hash = 5381;
+    for (const char of value) {
+      hash = (hash * 33) ^ char.charCodeAt(0);
+    }
+    return Math.abs(hash) % 100;
+  }
+
+  private normalizeKeyPart(value: string | number | undefined): string {
+    if (value === undefined || value === null) return "_";
+    return String(value).trim().replace(/[:\s]/g, "_");
+  }
+
+  private buildAuthorizationCacheKey(input: {
+    userId: string;
+    resource: string;
+    action: string;
+    organizationId?: string;
+    groupId?: string;
+  }): string {
+    return [
+      "rbac",
+      "v1",
+      "auth",
+      this.normalizeKeyPart(input.userId),
+      this.normalizeKeyPart(input.resource),
+      this.normalizeKeyPart(input.action),
+      this.normalizeKeyPart(input.organizationId),
+      this.normalizeKeyPart(input.groupId),
+    ].join(":");
+  }
+
+  private buildEntitlementCacheKey(input: {
+    userId: string;
+    key: string;
+    organizationId?: string;
+    groupId?: string;
+    quantity?: number;
+  }): string {
+    return [
+      "rbac",
+      "v1",
+      "ent",
+      this.normalizeKeyPart(input.userId),
+      this.normalizeKeyPart(input.key),
+      this.normalizeKeyPart(input.organizationId),
+      this.normalizeKeyPart(input.groupId),
+      this.normalizeKeyPart(input.quantity),
+    ].join(":");
   }
 
   private normalizeEntitlementValue(value: unknown): EntitlementValue {
