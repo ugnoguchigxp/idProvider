@@ -1,5 +1,29 @@
 import { z } from "zod";
 
+const envBoolean = (defaultValue: boolean) =>
+  z
+    .union([z.boolean(), z.string()])
+    .transform((value, ctx) => {
+      if (typeof value === "boolean") {
+        return value;
+      }
+
+      const normalized = value.trim().toLowerCase();
+      if (normalized === "true" || normalized === "1" || normalized === "yes") {
+        return true;
+      }
+      if (normalized === "false" || normalized === "0" || normalized === "no") {
+        return false;
+      }
+
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Expected boolean-like value (true/false/1/0/yes/no)",
+      });
+      return z.NEVER;
+    })
+    .default(defaultValue);
+
 const envSchema = z
   .object({
     NODE_ENV: z
@@ -72,14 +96,14 @@ const envSchema = z
       .default(90),
     RETENTION_BATCH_CHUNK_SIZE: z.coerce.number().int().positive().default(500),
     RETENTION_JOB_LOCK_KEY: z.coerce.number().int().default(91_000_101),
-    RETENTION_JOB_ENABLED: z.coerce.boolean().default(true),
+    RETENTION_JOB_ENABLED: envBoolean(true),
     ACCOUNT_DELETION_GRACE_DAYS: z.coerce
       .number()
       .int()
       .nonnegative()
       .default(30),
     ACCOUNT_DELETION_JOB_LOCK_KEY: z.coerce.number().int().default(91_000_102),
-    ACCOUNT_DELETION_JOB_ENABLED: z.coerce.boolean().default(true),
+    ACCOUNT_DELETION_JOB_ENABLED: envBoolean(true),
     RATE_LIMIT_ACCOUNT_DELETE_PER_HOUR: z.coerce
       .number()
       .int()
