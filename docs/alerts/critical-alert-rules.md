@@ -26,6 +26,16 @@
 - Severity: High
 - Runbook: `RB-ADMIN-CONFIG`
 
+### AL-005: Bot challenge invalid spike
+- Condition: `idp_bot_challenge_total{result="failed"} increase > threshold` over 5m
+- Severity: High
+- Runbook: `RB-BOT-MITIGATION`
+
+### AL-006: Bot risk block triggered
+- Condition: `idp_bot_block_total increase > 0` over 5m
+- Severity: Critical
+- Runbook: `RB-BOT-MITIGATION`
+
 ## 3. 運用ルール
 - Criticalは即時ページング
 - Highは5分以内に一次確認

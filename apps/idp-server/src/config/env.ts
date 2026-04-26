@@ -126,8 +126,44 @@ const envSchema = z
       .positive()
       .default(5),
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+    ADMIN_SOD_ENFORCED: envBoolean(false),
     METRICS_ENABLED: envBoolean(true),
     METRICS_BEARER_TOKEN: z.string().default(""),
+    TURNSTILE_ENABLED: envBoolean(false),
+    TURNSTILE_SECRET_KEY: z.string().default(""),
+    TURNSTILE_SITE_KEY: z.string().default(""),
+    TURNSTILE_VERIFY_URL: z
+      .string()
+      .url()
+      .default("https://challenges.cloudflare.com/turnstile/v0/siteverify"),
+    TURNSTILE_REQUIRED_ACTIONS: z
+      .string()
+      .default("signup,password_reset")
+      .transform((value) =>
+        value
+          .split(",")
+          .map((v) => v.trim())
+          .filter((v) => v.length > 0),
+      )
+      .pipe(
+        z.array(z.enum(["signup", "password_reset", "login", "google_login"])),
+      ),
+    TURNSTILE_ENFORCE_LOGIN_MODE: z
+      .enum(["off", "risk", "always"])
+      .default("risk"),
+    TURNSTILE_EXPECTED_HOSTNAME: z.string().default(""),
+    BOT_RISK_WINDOW_SECONDS: z.coerce.number().int().positive().default(600),
+    BOT_RISK_LOGIN_THRESHOLD_PER_WINDOW: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(20),
+    BOT_RISK_MEDIUM_WATERMARK_PERCENT: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(100)
+      .default(20),
     JWT_PRIVATE_KEY: z.string().min(1),
     DATABASE_URL: z.string().url(),
     REDIS_URL: z.string().url(),
@@ -176,6 +212,22 @@ const envSchema = z
         message:
           "METRICS_BEARER_TOKEN must be set when METRICS_ENABLED=true in production",
         path: ["METRICS_BEARER_TOKEN"],
+      });
+    }
+
+    if (env.TURNSTILE_ENABLED && env.TURNSTILE_SECRET_KEY.trim().length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "TURNSTILE_SECRET_KEY must be set when TURNSTILE_ENABLED=true",
+        path: ["TURNSTILE_SECRET_KEY"],
+      });
+    }
+
+    if (env.TURNSTILE_ENABLED && env.TURNSTILE_SITE_KEY.trim().length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "TURNSTILE_SITE_KEY must be set when TURNSTILE_ENABLED=true",
+        path: ["TURNSTILE_SITE_KEY"],
       });
     }
 

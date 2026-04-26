@@ -10,6 +10,7 @@ export const signupRequestSchema = z.object({
   email: normalizedEmail,
   password: z.string().min(12).max(128),
   displayName: z.string().trim().min(1).max(80),
+  challengeToken: z.string().min(1).max(2048).optional(),
 });
 
 export const loginRequestSchema = z
@@ -28,6 +29,7 @@ export const loginRequestSchema = z
       .max(32)
       .regex(/^[A-Za-z2-9 -]+$/)
       .optional(),
+    challengeToken: z.string().min(1).max(2048).optional(),
   })
   .superRefine((data, ctx) => {
     const hasMfaCode = Boolean(data.mfaCode);
@@ -103,6 +105,7 @@ export const passwordChangeRequestSchema = z.object({
 
 export const passwordResetRequestSchema = z.object({
   email: normalizedEmail,
+  challengeToken: z.string().min(1).max(2048).optional(),
 });
 
 export const emailVerificationRequestSchema = z.object({
@@ -133,6 +136,7 @@ export const googleLoginRequestSchema = z
       .max(32)
       .regex(/^[A-Za-z2-9 -]+$/)
       .optional(),
+    challengeToken: z.string().min(1).max(2048).optional(),
   })
   .superRefine((data, ctx) => {
     const hasMfaCode = Boolean(data.mfaCode);

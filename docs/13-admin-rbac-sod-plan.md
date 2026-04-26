@@ -1,7 +1,7 @@
 # 13. 管理者権限分離（SoD）実装計画
 
 最終更新: 2026-04-26
-ステータス: Planned
+ステータス: Planned（Gate Review Required）
 優先度: P1
 
 ## 1. 目的
@@ -30,7 +30,22 @@
 3. `admin-ui` に権限ベース表示制御がない
 4. 権限不足時の監査記録（拒否イベント）が弱い
 
-## 3. 完了定義（Definition of Done）
+## 3. 適用判断ゲート（Go/No-Go）
+### Gate 0: 実装着手前に必須
+- [ ] 後方互換方針を固定する（`admin:manage` / `admin:all` を暫定許可する期間を明記）
+- [ ] 権限マトリクス（権限キー名・エンドポイント対応）を凍結する
+- [ ] ロールアウト制御フラグを定義する（`ADMIN_SOD_ENFORCED`）
+- [ ] 拒否時監査イベントのスキーマを定義する（`admin.access.denied`）
+- [ ] 最低限のロール別回帰テストケースを先に用意する
+
+Go条件:
+- 上記5項目が文書化され、Backend/Security/Frontendの合意が取れている
+
+No-Go条件:
+- 権限キーや互換期間が未確定のまま
+- 403拒否時の監査追跡ができないまま
+
+## 4. 完了定義（Definition of Done）
 - [ ] SoDロール3種と権限キー一覧が固定される
 - [ ] 管理系エンドポイントごとに必要権限が実装される
 - [ ] 権限不足アクセスが 403 + 監査ログ記録される
@@ -39,8 +54,8 @@
 - [ ] unit/contract/UIテストが追加される
 - [ ] `pnpm verify` が通る
 
-## 4. スコープ
-### 4.1 対象
+## 5. スコープ
+### 5.1 対象
 - `apps/idp-server/src/modules/rbac/rbac.service.ts`
 - `apps/idp-server/src/modules/config/config.routes.ts`
 - `apps/idp-server/src/modules/oauth-clients/oauth-client.routes.ts`
@@ -55,13 +70,13 @@
 - `docs/security-runbook.md`
 - `docs/security-event-catalog.md`
 
-### 4.2 対象外
+### 5.2 対象外
 - 組織階層ごとの承認ワークフロー実装
 - 外部IAM（SCIM/SAML）連携による自動プロビジョニング
 - マルチテナント分離モデルの刷新
 
-## 5. 権限モデル（固定）
-### 5.1 ロール定義
+## 6. 権限モデル（固定）
+### 6.1 ロール定義
 1. `system_admin`
 - 管理設定変更、OAuth client管理、鍵ローテーション、監査参照/出力
 
@@ -73,7 +88,7 @@
 - `audit_logs` / `security_events` の参照・エクスポート
 - 設定変更・鍵操作は不可
 
-### 5.2 権限キー案
+### 6.2 権限キー
 - `admin.config:read`
 - `admin.config:write`
 - `admin.oauth_client:read`
@@ -83,7 +98,7 @@
 - `admin.audit:read`
 - `admin.audit:export`
 
-### 5.3 エンドポイント対応
+### 6.3 エンドポイント対応
 - `GET /v1/admin/configs` -> `admin.config:read`
 - `PUT /v1/admin/configs/*` -> `admin.config:write`
 - `GET /v1/admin/oauth/clients` -> `admin.oauth_client:read`
@@ -93,7 +108,27 @@
 - `GET /v1/admin/audit/*` -> `admin.audit:read`
 - `POST /v1/admin/audit/exports` -> `admin.audit:export`
 
-## 6. 実装タスク（着手順）
+### 6.4 後方互換（移行期間）
+- 移行期間中は `admin:manage` または `admin:all` を互換許可
+- 互換許可の終了条件:
+  - 7日間、`admin:manage` 依存アクセスがゼロ
+  - ロール別テストと運用モニタが安定
+
+## 7. 実装タスク（着手順）
+### Task 0: Gate 0完了（Day 0）
+担当: Tech Lead + Backend + Security + Frontend
+
+対象:
+- 本ドキュメント
+- `docs/security-runbook.md`
+
+内容:
+- Gate 0チェックを埋め、合意記録を残す
+- Go/No-Go判定を明示
+
+受け入れ条件:
+- Go判定の記録が残る
+
 ### Task 1: 権限マトリクスと初期データ整備（Day 1-2）
 担当: Backend
 
@@ -103,7 +138,7 @@
 
 内容:
 - 3ロール + 権限キーをseedへ追加
-- 既存 `admin` ロールから段階移行できる互換運用を定義
+- 既存 `admin` ロールから段階移行できる互換運用を実装
 - 開発/検証環境向けの初期ユーザー割当を更新
 
 受け入れ条件:
@@ -134,7 +169,7 @@
 - `docs/security-event-catalog.md`
 
 内容:
-- 権限拒否時の監査イベント追加（例: `admin.access.denied`）
+- 権限拒否時の監査イベント追加（`admin.access.denied`）
 - payloadへ `resource`, `action`, `actorUserId` を格納
 - 不正な権限昇格試行をHigh/Mediumで分類
 
@@ -169,23 +204,23 @@
 - ロール別テスト（許可/拒否）を追加
 - 既存admin互換モードでの回帰を確認
 - 本番段階適用:
-  - Phase A: audit read系のみ新権限化
-  - Phase B: config/oauth管理系を新権限化
-  - Phase C: key操作を新権限化
+  - Phase A: `warn-only`（拒否せず監査記録のみ）
+  - Phase B: audit/config/oauth の強制
+  - Phase C: key操作を強制
 
 受け入れ条件:
 - 既存運用を止めずに新権限へ移行できる
 
-## 7. 実行スケジュール（固定日付）
-1. 2026-04-27: Task 1 着手（ロール/権限定義）
-2. 2026-04-28: Task 2 着手（APIガード分割）
-3. 2026-04-29: Task 2 完了、Task 3 着手（監査強化）
-4. 2026-04-30: Task 4 着手（admin-ui制御）
+## 8. 実行スケジュール（固定日付）
+1. 2026-04-27: Task 0（Gate 0判定）
+2. 2026-04-28: Task 1 着手（ロール/権限定義）
+3. 2026-04-29: Task 2 着手（APIガード分割）
+4. 2026-04-30: Task 2 完了、Task 3/4 着手
 5. 2026-05-01: Task 3/4 完了、結合確認
-6. 2026-05-04: Task 5 開始（ロール別回帰）
-7. 2026-05-08: 本番段階適用完了
+6. 2026-05-04: Task 5 開始（ロール別回帰 + warn-only）
+7. 2026-05-08: 強制モード移行完了
 
-## 8. テストマトリクス
+## 9. テストマトリクス
 1. API認可
 - `system_admin` は全管理APIを実行可能
 - `security_auditor` は audit read/export のみ許可
@@ -203,17 +238,22 @@
 - 既存 `admin` ロールユーザーの運用を壊さない
 - OpenAPI契約テストが維持される
 
-## 9. ロールアウト方針
+## 10. ロールアウト方針
 - Feature flag `ADMIN_SOD_ENFORCED` を導入
-- 初期は `warn-only` で拒否判定をログ観測
-- 問題なければ強制モードへ移行
+- 1段階目: `warn-only`（監査記録のみ）
+- 2段階目: 一部エンドポイントで強制
+- 3段階目: 全管理エンドポイントで強制
 
-## 10. ロールバック戦略
+進行停止条件:
+- 403率が想定を超える（例: 管理API全体の5%以上）
+- `admin.access.denied` が急増し、正当操作を阻害
+
+## 11. ロールバック戦略
 - 重大障害時は `ADMIN_SOD_ENFORCED=false` で旧 `admin:manage` 判定へ戻す
 - 誤拒否発生時は該当権限のみ一時的に `admin:all` へマップ
 - 変更履歴は `docs/security-runbook.md` に追記
 
-## 11. 検証コマンド
+## 12. 検証コマンド
 ```bash
 pnpm --filter @idp/idp-server test
 pnpm --filter @idp/idp-server test -- admin
@@ -221,7 +261,8 @@ pnpm --filter @idp/admin-ui test
 pnpm verify
 ```
 
-## 12. 実行チェックリスト
+## 13. 実行チェックリスト
+- [ ] Gate 0完了（Go判定記録）
 - [ ] SoDロール/権限キーの確定
 - [ ] 管理APIの権限ガード分割
 - [ ] 権限拒否の監査イベント追加

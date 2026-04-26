@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { accountDeletionRequestSchema as accountDeletionSchema } from "../schemas/account.js";
 import {
+  notificationUpdateSchema,
+  oauthClientCreateSchema,
+  oauthClientRotateSecretSchema,
+  oauthClientUpdateSchema,
+  socialLoginUpdateSchema,
+} from "../schemas/admin.js";
+import {
   entitlementCheckRequestSchema,
+  googleLoginRequestSchema,
   loginRequestSchema,
   mfaRecoveryRegenerateRequestSchema,
   mfaVerifyRequestSchema,
@@ -38,6 +46,14 @@ describe("auth schemas", () => {
         mfaCode: "123456",
       }),
     ).toThrow();
+
+    expect(() =>
+      loginRequestSchema.parse({
+        email: "login@example.com",
+        password: "password",
+        mfaFactorId: crypto.randomUUID(),
+      }),
+    ).toThrow();
   });
 
   it("mfaVerifyRequestSchema validates code", () => {
@@ -60,6 +76,12 @@ describe("auth schemas", () => {
     expect(() =>
       mfaRecoveryRegenerateRequestSchema.parse({ mfaCode: "123456" }),
     ).toThrow();
+
+    expect(() =>
+      mfaRecoveryRegenerateRequestSchema.parse({
+        mfaFactorId: crypto.randomUUID(),
+      }),
+    ).toThrow();
   });
 
   it("entitlementCheckRequestSchema validates quantity", () => {
@@ -73,6 +95,22 @@ describe("auth schemas", () => {
       entitlementCheckRequestSchema.parse({
         key: "max_projects",
         quantity: 0,
+      }),
+    ).toThrow();
+  });
+
+  it("googleLoginRequestSchema rejects partial MFA factor input", () => {
+    expect(() =>
+      googleLoginRequestSchema.parse({
+        idToken: "some-id-token",
+        mfaCode: "123456",
+      }),
+    ).toThrow();
+
+    expect(() =>
+      googleLoginRequestSchema.parse({
+        idToken: "some-id-token",
+        mfaFactorId: crypto.randomUUID(),
       }),
     ).toThrow();
   });
@@ -102,6 +140,12 @@ describe("account schemas", () => {
         mfaCode: "123456",
       }),
     ).toThrow();
+
+    expect(() =>
+      accountDeletionSchema.parse({
+        mfaFactorId: crypto.randomUUID(),
+      }),
+    ).toThrow();
   });
 });
 
@@ -127,5 +171,111 @@ describe("user schemas", () => {
         zoneinfo: "Mars/Olympus",
       }),
     ).toThrow();
+  });
+
+  it("updateUserProfileRequestSchema rejects control characters", () => {
+    expect(() =>
+      updateUserProfileRequestSchema.parse({
+        displayName: "Invalid\x00Name",
+      }),
+    ).toThrow();
+  });
+
+  it("updateUserProfileRequestSchema rejects invalid locale", () => {
+    expect(() =>
+      updateUserProfileRequestSchema.parse({
+        locale: "invalid-locale-format!!",
+      }),
+    ).toThrow();
+  });
+});
+
+describe("admin schemas", () => {
+  it("socialLoginUpdateSchema normalizes providerEnabled boolean, string, array", () => {
+    expect(
+      socialLoginUpdateSchema.parse({
+        providerEnabled: true,
+        clientId: "id",
+        clientSecret: "sec",
+      }).providerEnabled,
+    ).toBe(true);
+    expect(
+      socialLoginUpdateSchema.parse({
+        providerEnabled: "true",
+        clientId: "id",
+        clientSecret: "sec",
+      }).providerEnabled,
+    ).toBe(true);
+    expect(
+      socialLoginUpdateSchema.parse({
+        providerEnabled: "on",
+        clientId: "id",
+        clientSecret: "sec",
+      }).providerEnabled,
+    ).toBe(true);
+    expect(
+      socialLoginUpdateSchema.parse({
+        providerEnabled: "false",
+        clientId: "id",
+        clientSecret: "sec",
+      }).providerEnabled,
+    ).toBe(false);
+    expect(
+      socialLoginUpdateSchema.parse({
+        providerEnabled: ["true"],
+        clientId: "id",
+        clientSecret: "sec",
+      }).providerEnabled,
+    ).toBe(true);
+    expect(
+      socialLoginUpdateSchema.parse({
+        providerEnabled: ["on"],
+        clientId: "id",
+        clientSecret: "sec",
+      }).providerEnabled,
+    ).toBe(true);
+    expect(
+      socialLoginUpdateSchema.parse({
+        providerEnabled: ["false"],
+        clientId: "id",
+        clientSecret: "sec",
+      }).providerEnabled,
+    ).toBe(false);
+    expect(
+      socialLoginUpdateSchema.parse({
+        providerEnabled: false,
+        clientId: "id",
+        clientSecret: "sec",
+      }).providerEnabled,
+    ).toBe(false);
+  });
+
+  it("notificationUpdateSchema normalizes arrays and csv strings", () => {
+    expect(
+      notificationUpdateSchema.parse({
+        notificationRecipients: ["test@example.com"],
+        alertLevels: ["Critical"],
+      }).notificationRecipients,
+    ).toEqual(["test@example.com"]);
+    expect(
+      notificationUpdateSchema.parse({
+        notificationRecipients: "test1@example.com,test2@example.com",
+        alertLevels: "Critical,Warning",
+      }).notificationRecipients,
+    ).toEqual(["test1@example.com", "test2@example.com"]);
+  });
+
+  it("oauthClientCreateSchema sets default values", () => {
+    const parsed = oauthClientCreateSchema.parse({ name: "My Client" });
+    expect(parsed.clientType).toBe("confidential");
+    expect(parsed.tokenEndpointAuthMethod).toBe("client_secret_basic");
+  });
+
+  it("oauthClientUpdateSchema requires at least one field", () => {
+    expect(() => oauthClientUpdateSchema.parse({})).toThrow();
+  });
+
+  it("oauthClientRotateSecretSchema has default grace period", () => {
+    expect(oauthClientRotateSecretSchema.parse({}).gracePeriodDays).toBe(7);
   });
 });

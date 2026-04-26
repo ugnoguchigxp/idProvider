@@ -2,7 +2,11 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
-import { getAdminConfigs, updateGoogleSocialLogin } from "./lib/admin-api";
+import {
+  checkPermission,
+  getAdminConfigs,
+  updateGoogleSocialLogin,
+} from "./lib/admin-api";
 import {
   type SocialLoginUpdateInput,
   socialLoginUpdateSchema,
@@ -14,6 +18,11 @@ export const App = () => {
   const configQuery = useQuery({
     queryKey: ["admin-configs"],
     queryFn: getAdminConfigs,
+  });
+  const writePermissionQuery = useQuery({
+    queryKey: ["permission", "admin.config:write"],
+    queryFn: () => checkPermission("admin.config:write"),
+    retry: false,
   });
 
   const form = useForm<SocialLoginUpdateInput>({
@@ -37,6 +46,8 @@ export const App = () => {
       await queryClient.invalidateQueries({ queryKey: ["admin-configs"] });
     },
   });
+  const canWriteConfig = writePermissionQuery.data?.allowed === true;
+  const formDisabled = !canWriteConfig || updateMutation.isPending;
 
   return (
     <main className="container">
@@ -52,6 +63,14 @@ export const App = () => {
         {configQuery.isError ? (
           <p className="error">{String(configQuery.error)}</p>
         ) : null}
+        {writePermissionQuery.isError ? (
+          <p className="error">{String(writePermissionQuery.error)}</p>
+        ) : null}
+        {!writePermissionQuery.isLoading && !canWriteConfig ? (
+          <p className="error">
+            You do not have permission to update this setting.
+          </p>
+        ) : null}
 
         <form
           onSubmit={form.handleSubmit((values) =>
@@ -60,13 +79,21 @@ export const App = () => {
           className="form"
         >
           <label className="checkboxRow">
-            <input type="checkbox" {...form.register("providerEnabled")} />
+            <input
+              type="checkbox"
+              disabled={formDisabled}
+              {...form.register("providerEnabled")}
+            />
             Provider enabled
           </label>
 
           <label className="field">
             <span>Client ID</span>
-            <input type="text" {...form.register("clientId")} />
+            <input
+              type="text"
+              disabled={formDisabled}
+              {...form.register("clientId")}
+            />
             {form.formState.errors.clientId ? (
               <small className="error">
                 {form.formState.errors.clientId.message}
@@ -76,7 +103,11 @@ export const App = () => {
 
           <label className="field">
             <span>Client Secret</span>
-            <input type="password" {...form.register("clientSecret")} />
+            <input
+              type="password"
+              disabled={formDisabled}
+              {...form.register("clientSecret")}
+            />
             {form.formState.errors.clientSecret ? (
               <small className="error">
                 {form.formState.errors.clientSecret.message}
@@ -84,7 +115,7 @@ export const App = () => {
             ) : null}
           </label>
 
-          <button type="submit" disabled={updateMutation.isPending}>
+          <button type="submit" disabled={formDisabled}>
             {updateMutation.isPending ? "Saving..." : "Save"}
           </button>
 

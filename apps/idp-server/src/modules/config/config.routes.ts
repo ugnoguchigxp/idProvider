@@ -1,6 +1,5 @@
 import type { ConfigService } from "@idp/auth-core";
 import {
-  ApiError,
   emailTemplateUpdateSchema,
   emptyRequestSchema,
   notificationUpdateSchema,
@@ -8,8 +7,10 @@ import {
 } from "@idp/shared";
 import { Hono } from "hono";
 import { authenticatedEndpointAdapter } from "../../adapters/authenticated-endpoint-adapter.js";
+import type { AppEnv } from "../../config/env.js";
 import type { AuditRepository } from "../audit/audit.repository.js";
 import type { AuthService } from "../auth/auth.service.js";
+import { assertAdminPermission } from "../rbac/admin-authorization.js";
 import type { RBACService } from "../rbac/rbac.service.js";
 
 export type AdminRoutesDependencies = {
@@ -17,17 +18,7 @@ export type AdminRoutesDependencies = {
   rbacService: RBACService;
   configService: ConfigService;
   auditRepository: AuditRepository;
-};
-
-const assertAdmin = async (deps: AdminRoutesDependencies, userId: string) => {
-  const auth = await deps.rbacService.authorizationCheck({
-    userId,
-    resource: "admin",
-    action: "manage",
-  });
-  if (!auth.allowed) {
-    throw new ApiError(403, "forbidden", "Admin privilege is required");
-  }
+  env: AppEnv;
 };
 
 export const createConfigRoutes = (deps: AdminRoutesDependencies) => {
@@ -42,8 +33,14 @@ export const createConfigRoutes = (deps: AdminRoutesDependencies) => {
     authenticatedEndpointAdapter({
       schema: emptyRequestSchema,
       authenticate,
-      handler: async (_c, _payload, auth) => {
-        await assertAdmin(deps, auth.userId);
+      handler: async (c, _payload, auth) => {
+        await assertAdminPermission(deps, {
+          userId: auth.userId,
+          resource: "admin.config",
+          action: "read",
+          path: c.req.path,
+          method: c.req.method,
+        });
         const [social, notifications, signupTemplate, resetTemplate] =
           await Promise.all([
             deps.configService.getSocialLoginConfig("google"),
@@ -68,8 +65,14 @@ export const createConfigRoutes = (deps: AdminRoutesDependencies) => {
     authenticatedEndpointAdapter({
       schema: socialLoginUpdateSchema,
       authenticate,
-      handler: async (_c, payload, auth) => {
-        await assertAdmin(deps, auth.userId);
+      handler: async (c, payload, auth) => {
+        await assertAdminPermission(deps, {
+          userId: auth.userId,
+          resource: "admin.config",
+          action: "write",
+          path: c.req.path,
+          method: c.req.method,
+        });
         await deps.configService.updateSocialLoginConfig("google", payload);
         await deps.auditRepository.createSecurityEvent({
           eventType: "admin.config.updated",
@@ -88,8 +91,14 @@ export const createConfigRoutes = (deps: AdminRoutesDependencies) => {
     authenticatedEndpointAdapter({
       schema: notificationUpdateSchema,
       authenticate,
-      handler: async (_c, payload, auth) => {
-        await assertAdmin(deps, auth.userId);
+      handler: async (c, payload, auth) => {
+        await assertAdminPermission(deps, {
+          userId: auth.userId,
+          resource: "admin.config",
+          action: "write",
+          path: c.req.path,
+          method: c.req.method,
+        });
         await deps.configService.updateNotificationConfig(payload);
         await deps.auditRepository.createSecurityEvent({
           eventType: "admin.config.updated",
@@ -108,8 +117,14 @@ export const createConfigRoutes = (deps: AdminRoutesDependencies) => {
     authenticatedEndpointAdapter({
       schema: emailTemplateUpdateSchema,
       authenticate,
-      handler: async (_c, payload, auth) => {
-        await assertAdmin(deps, auth.userId);
+      handler: async (c, payload, auth) => {
+        await assertAdminPermission(deps, {
+          userId: auth.userId,
+          resource: "admin.config",
+          action: "write",
+          path: c.req.path,
+          method: c.req.method,
+        });
         await deps.configService.updateEmailTemplateConfig(
           payload.templateKey,
           {

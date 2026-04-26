@@ -79,4 +79,64 @@ describe("SessionRepository", () => {
       expect(db.update).toHaveBeenCalled();
     });
   });
+
+  describe("findById", () => {
+    it("should return session if found", async () => {
+      db.then.mockImplementationOnce((resolve: any) => resolve([{ id: "s1" }]));
+      const result = await repository.findById("s1");
+      expect(result).toEqual({ id: "s1" });
+    });
+
+    it("should return null if not found", async () => {
+      db.then.mockImplementationOnce((resolve: any) => resolve([]));
+      const result = await repository.findById("s1");
+      expect(result).toBeNull();
+    });
+  });
+
+  describe("findByAccessTokenHash", () => {
+    it("should return session with active user", async () => {
+      db.then.mockImplementationOnce((resolve: any) =>
+        resolve([{ id: "s1", userStatus: "active" }]),
+      );
+      const result = await repository.findByAccessTokenHash("hash");
+      expect(result).toEqual({ id: "s1", userStatus: "active" });
+    });
+
+    it("should return null if not found", async () => {
+      db.then.mockImplementationOnce((resolve: any) => resolve([]));
+      const result = await repository.findByAccessTokenHash("hash");
+      expect(result).toBeNull();
+    });
+  });
+
+  describe("findByAccessTokenHashAny", () => {
+    it("should return session regardless of expiry", async () => {
+      db.then.mockImplementationOnce((resolve: any) => resolve([{ id: "s1" }]));
+      const result = await repository.findByAccessTokenHashAny("hash");
+      expect(result).toEqual({ id: "s1" });
+    });
+
+    it("should return null if not found", async () => {
+      db.then.mockImplementationOnce((resolve: any) => resolve([]));
+      const result = await repository.findByAccessTokenHashAny("hash");
+      expect(result).toBeNull();
+    });
+  });
+
+  describe("findByRefreshTokenHash", () => {
+    it("should return session with active user", async () => {
+      db.then.mockImplementationOnce((resolve: any) =>
+        resolve([{ id: "s1", userStatus: "active" }]),
+      );
+      const result = await repository.findByRefreshTokenHash("hash");
+      expect(result).toEqual({ id: "s1", userStatus: "active" });
+    });
+
+    it("should return null if not found", async () => {
+      db.then.mockImplementationOnce((resolve: any) => resolve([]));
+      const result = await repository.findByRefreshTokenHash("hash");
+      expect(result).toBeNull();
+    });
+  });
 });

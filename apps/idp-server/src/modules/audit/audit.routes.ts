@@ -2,7 +2,9 @@ import { ApiError, emptyRequestSchema } from "@idp/shared";
 import { Hono } from "hono";
 import { z } from "zod";
 import { authenticatedEndpointAdapter } from "../../adapters/authenticated-endpoint-adapter.js";
+import type { AppEnv } from "../../config/env.js";
 import type { AuthService } from "../auth/auth.service.js";
+import { assertAdminPermission } from "../rbac/admin-authorization.js";
 import type { RBACService } from "../rbac/rbac.service.js";
 import type { AuditRepository } from "./audit.repository.js";
 import { AuditExportService } from "./audit-export.service.js";
@@ -11,6 +13,7 @@ export type AuditRoutesDependencies = {
   authService: AuthService;
   rbacService: RBACService;
   auditRepository: AuditRepository;
+  env: AppEnv;
 };
 
 const auditExportRequestSchema = z.object({
@@ -72,17 +75,6 @@ const encodeCursor = (
   ).toString("base64url");
 };
 
-const assertAdmin = async (deps: AuditRoutesDependencies, userId: string) => {
-  const auth = await deps.rbacService.authorizationCheck({
-    userId,
-    resource: "admin",
-    action: "manage",
-  });
-  if (!auth.allowed) {
-    throw new ApiError(403, "forbidden", "Admin privilege is required");
-  }
-};
-
 export const createAuditRoutes = (deps: AuditRoutesDependencies) => {
   const app = new Hono();
   const auditExportService = new AuditExportService(deps.auditRepository);
@@ -97,7 +89,13 @@ export const createAuditRoutes = (deps: AuditRoutesDependencies) => {
       schema: emptyRequestSchema,
       authenticate,
       handler: async (c, _payload, auth) => {
-        await assertAdmin(deps, auth.userId);
+        await assertAdminPermission(deps, {
+          userId: auth.userId,
+          resource: "admin.audit",
+          action: "read",
+          path: c.req.path,
+          method: c.req.method,
+        });
         const query = c.req.query();
         const page = await deps.auditRepository.listAuditLogs({
           from: parseDate(query.from, "from"),
@@ -127,7 +125,13 @@ export const createAuditRoutes = (deps: AuditRoutesDependencies) => {
       schema: emptyRequestSchema,
       authenticate,
       handler: async (c, _payload, auth) => {
-        await assertAdmin(deps, auth.userId);
+        await assertAdminPermission(deps, {
+          userId: auth.userId,
+          resource: "admin.audit",
+          action: "read",
+          path: c.req.path,
+          method: c.req.method,
+        });
         const query = c.req.query();
         const page = await deps.auditRepository.listSecurityEvents({
           from: parseDate(query.from, "from"),
@@ -155,7 +159,13 @@ export const createAuditRoutes = (deps: AuditRoutesDependencies) => {
       schema: emptyRequestSchema,
       authenticate,
       handler: async (c, _payload, auth) => {
-        await assertAdmin(deps, auth.userId);
+        await assertAdminPermission(deps, {
+          userId: auth.userId,
+          resource: "admin.audit",
+          action: "read",
+          path: c.req.path,
+          method: c.req.method,
+        });
         const query = c.req.query();
         return deps.auditRepository.verifyIntegrityRange({
           from: parseDate(query.from, "from"),
@@ -170,8 +180,14 @@ export const createAuditRoutes = (deps: AuditRoutesDependencies) => {
     authenticatedEndpointAdapter({
       schema: auditExportRequestSchema,
       authenticate,
-      handler: async (_c, payload, auth) => {
-        await assertAdmin(deps, auth.userId);
+      handler: async (c, payload, auth) => {
+        await assertAdminPermission(deps, {
+          userId: auth.userId,
+          resource: "admin.audit",
+          action: "export",
+          path: c.req.path,
+          method: c.req.method,
+        });
 
         const from = payload.from ? new Date(payload.from) : undefined;
         const to = payload.to ? new Date(payload.to) : undefined;

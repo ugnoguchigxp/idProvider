@@ -1,7 +1,7 @@
 # 12. キャッシュ戦略とDB負荷最適化 実装計画
 
 最終更新: 2026-04-26
-ステータス: Planned
+ステータス: Planned（Gate Review Required）
 優先度: P1
 
 ## 1. 目的
@@ -10,8 +10,8 @@
 達成したい状態:
 - 認可・エンタイトルメント判定の p95 を 200ms 未満で安定化
 - RBAC参照のDBクエリ数を平常時 60%以上削減
-- 権限変更後の反映遅延を許容範囲（最大 60 秒）に制御
-- キャッシュ障害時も fail-open/fail-closed の方針に沿って安全動作する
+- 権限変更後の反映遅延を最大 60 秒以内に制御
+- Redis障害時も認可APIを継続提供する
 
 ## 2. 現状整理（2026-04-26）
 ### 2.1 実装済み
@@ -26,21 +26,36 @@
 
 ### 2.2 ギャップ
 1. RBAC判定に専用キャッシュがない
-2. 権限更新時のキャッシュ無効化フローがない
-3. キャッシュヒット率とDBオフロード率の運用指標が未定義
-4. 高負荷時の段階的ロールアウト手順が未整備
+2. 権限更新時の無効化トリガーが未定義
+3. ベースライン（導入前 p95 / DBクエリ数）が未計測
+4. 段階ロールアウトと切り戻し条件が曖昧
 
-## 3. 完了定義（Definition of Done）
+## 3. 適用判断ゲート（Go/No-Go）
+### Gate 0: 実装着手前に必須
+- [ ] 無効化トリガーを固定する（どの操作が invalidate を発火するか）
+- [ ] Redis障害時フォールバックを固定する（DB直参照で継続）
+- [ ] ロールアウト制御フラグを定義する（`RBAC_CACHE_ENABLED`）
+- [ ] 導入前ベースラインを採取する（p95 / DBクエリ数 / エラー率）
+- [ ] 負荷試験条件を固定する（同一シナリオで比較可能）
+
+Go条件:
+- 上記5項目が文書化され、Backend/SRE合意済み
+
+No-Go条件:
+- invalidate対象操作が未確定
+- Redis障害時の挙動が未確定
+
+## 4. 完了定義（Definition of Done）
 - [ ] RBAC/entitlement 判定にRedisキャッシュが導入される
-- [ ] キャッシュキー設計（user/org/group）がドキュメント化される
+- [ ] キャッシュキー設計（user/org/group）が文書化される
 - [ ] 権限変更時のイベント駆動invalidateが実装される
 - [ ] キャッシュ関連メトリクス（hit/miss/error/latency）が収集される
 - [ ] 負荷試験でDBクエリ削減率 60%以上を確認する
-- [ ] 失敗時フォールバック（Redis障害時のDB直参照）が検証される
+- [ ] Redis障害時のDBフォールバックを検証する
 - [ ] `pnpm verify` が通る
 
-## 4. スコープ
-### 4.1 対象
+## 5. スコープ
+### 5.1 対象
 - `apps/idp-server/src/modules/rbac/rbac.service.ts`
 - `apps/idp-server/src/modules/rbac/rbac.repository.ts`
 - `apps/idp-server/src/modules/rbac/rbac.service.test.ts`
@@ -52,13 +67,13 @@
 - `docs/alerts/critical-alert-rules.md`
 - `docs/dashboards/idp-reliability-dashboard.md`
 
-### 4.2 対象外
+### 5.2 対象外
 - PostgreSQLクラスタ構成変更（read replica増設など）
 - 認可モデルそのものの再設計（RBAC -> ABAC移行）
 - 外部キャッシュ製品への移行
 
-## 5. 設計方針
-### 5.1 キャッシュ対象
+## 6. 設計方針
+### 6.1 キャッシュ対象
 1. Authorization判定結果
 - key例: `rbac:auth:{userId}:{resource}:{action}:{orgId|_}:{groupId|_}`
 - TTL: 30秒（短TTL + invalidate併用）
@@ -71,23 +86,35 @@
 - key例: `rbac:snapshot:{userId}:{orgId|_}:{groupId|_}`
 - TTL: 120秒
 
-### 5.2 無効化戦略
-- admin操作で権限・エンタイトルメント更新時に対象ユーザーキーを削除
-- 一括反映時は prefix invalidate ではなくバージョンキー方式を優先
-  - `rbac:ver:{userId}` をインクリメントし、実キーに組み込む
-- TTL切れ依存を補助とし、整合性保証はイベント駆動invalidateで担保
+### 6.2 無効化トリガー（本プロジェクト向け）
+- ロール/権限割当更新（`user_roles`, `group_roles`, `role_permissions` 変更時）
+- entitlement変更（`entitlements` 更新時）
+- SoD導入で追加される管理ロール更新API
 
-### 5.3 フォールバック
+### 6.3 フォールバック
 - Redis read失敗時: DB直接参照へフォールバック（サービス継続）
-- Redis write失敗時: エラーメトリクス記録のみでリクエストは継続
-- 連続Redis障害時: キャッシュ層をfeature flagで一時無効化
+- Redis write失敗時: エラーメトリクス記録のみで処理継続
+- Redis障害継続時: `RBAC_CACHE_ENABLED=false` でキャッシュ層を無効化
 
-## 6. 実装タスク（着手順）
+## 7. 実装タスク（着手順）
+### Task 0: Gate 0完了（Day 0）
+担当: Tech Lead + Backend + SRE
+
+対象:
+- 本ドキュメント
+
+内容:
+- Gate 0チェック完了とGo/No-Go判定記録
+- ベースライン計測結果を保存
+
+受け入れ条件:
+- Go判定記録とベースライン値が残る
+
 ### Task 1: RBACキャッシュ抽象の導入（Day 1-2）
 担当: Backend
 
 対象:
-- `apps/idp-server/src/modules/rbac/` 配下（新規 `rbac-cache.ts` 想定）
+- `apps/idp-server/src/modules/rbac/` 配下（新規 `rbac-cache.ts`）
 - `apps/idp-server/src/composition/create-services.ts`
 
 内容:
@@ -98,7 +125,7 @@
 受け入れ条件:
 - キャッシュ無効でも既存挙動を壊さず起動・テスト通過
 
-### Task 2: authorization/entitlement 判定のキャッシュ化（Day 2-4）
+### Task 2: 判定系のキャッシュ化（Day 2-4）
 担当: Backend
 
 対象:
@@ -107,26 +134,25 @@
 
 内容:
 - `authorizationCheck` / `entitlementCheck` に read-through cache を導入
-- key生成をユーティリティ化し衝突を防止
-- quantity条件ありの entitlement 判定も別キーで管理
+- key生成ユーティリティを追加して衝突を回避
+- quantity条件ありの entitlement 判定も別キー化
 
 受け入れ条件:
-- 同一条件の連続呼び出しでDB呼び出し回数が減るテストを追加
+- 同一条件の連続呼び出しでDB呼び出し回数が減る
 
-### Task 3: 無効化フック実装（Day 3-5）
+### Task 3: invalidate実装（Day 3-5）
 担当: Backend
 
 対象:
-- `apps/idp-server/src/modules/config/config.routes.ts`
-- `apps/idp-server/src/modules/oauth-clients/oauth-client.routes.ts`
-- RBAC変更を行うadmin系モジュール
+- RBAC/entitlement 更新を行うサービス層
+- 関連管理ルート（SoD対応時に更新）
 
 内容:
-- 権限/設定変更完了時に対象ユーザー（または組織）のRBACキャッシュをinvalidate
-- セキュリティイベントに invalidate情報を付与（監査追跡用）
+- Task 0で確定したトリガーで invalidate を発火
+- 監査用に invalidate結果をログへ残す
 
 受け入れ条件:
-- 権限変更後60秒以内ではなく「即時」に再判定へ反映される
+- 権限変更後に即時再判定へ反映される
 
 ### Task 4: メトリクス・アラート追加（Day 4-6）
 担当: Backend + SRE
@@ -142,12 +168,10 @@
   - `idp_rbac_cache_miss_total`
   - `idp_rbac_cache_error_total`
   - `idp_rbac_cache_latency_seconds`
-- アラート:
-  - miss率急増
-  - cache error増加
+- miss率増加・error増加のアラート定義
 
 受け入れ条件:
-- 監視で「キャッシュ効いているか」を5分以内に判断できる
+- 5分以内にキャッシュ有効性を判断できる
 
 ### Task 5: 負荷試験・段階ロールアウト（Day 7-10）
 担当: Backend + QA + SRE
@@ -157,26 +181,26 @@
 - デプロイ設定（feature flag）
 
 内容:
+- 導入前/導入後を同一シナリオで比較
 - 目標負荷: authorization + entitlement 合計 1000 TPS
-- 比較: キャッシュ無効時 vs 有効時でDB query量・p95を測定
 - 本番ロールアウト:
-  - Phase A: 10%
+  - Phase A: `warn-only`（計測のみ）
   - Phase B: 50%
   - Phase C: 100%
 
 受け入れ条件:
 - p95 < 200ms、DB query削減率 >= 60%、エラー率悪化なし
 
-## 7. 実行スケジュール（固定日付）
-1. 2026-04-27: Task 1 着手（抽象 + DI）
-2. 2026-04-28: Task 2 着手（read-through cache）
-3. 2026-04-29: Task 2 完了、Task 3 着手（invalidate）
-4. 2026-04-30: Task 3 完了、Task 4 着手（metrics/alert）
-5. 2026-05-01: Task 4 完了、レビュー
-6. 2026-05-04: Task 5 開始（load test + tuning）
-7. 2026-05-08: 本番100%反映、運用移管
+## 8. 実行スケジュール（固定日付）
+1. 2026-04-27: Task 0（Gate 0判定 + ベースライン採取）
+2. 2026-04-28: Task 1 着手（抽象 + DI）
+3. 2026-04-29: Task 2 着手（read-through cache）
+4. 2026-04-30: Task 2 完了、Task 3/4 着手
+5. 2026-05-01: Task 3/4 完了
+6. 2026-05-04: Task 5 開始（負荷試験 + warn-only）
+7. 2026-05-08: 100%反映完了
 
-## 8. テストマトリクス
+## 9. テストマトリクス
 1. 機能
 - cache miss時にDB参照して結果を返す
 - cache hit時にDB参照なしで同値結果を返す
@@ -193,27 +217,34 @@
 - 1000 TPSで p95 < 200ms
 - DBクエリ削減率 60%以上
 
-## 9. ロールアウト方針
+## 10. ロールアウト方針
 - Feature flag `RBAC_CACHE_ENABLED` を導入
-- 本番は 10% -> 50% -> 100% の段階展開
-- 各段階で30分以上のメトリクス観測を必須化
+- 1段階目: `warn-only`（判定差分と指標収集）
+- 2段階目: 50%適用
+- 3段階目: 100%適用
 
-## 10. ロールバック戦略
-- エラー率悪化時は `RBAC_CACHE_ENABLED=false` で即時切り戻し
-- invalidate異常時はTTL短縮（30秒以下）で暫定運用
-- Redis障害長期化時はWAF/レート制限を強化しDB保護を優先
+進行停止条件:
+- エラー率が導入前比で悪化
+- miss率急増でDB負荷が導入前を超過
 
-## 11. 検証コマンド
+## 11. ロールバック戦略
+- 異常時は `RBAC_CACHE_ENABLED=false` で即時切り戻し
+- invalidate不備時はTTL短縮（30秒以下）で暫定運用
+- Redis障害長期化時はDB保護を優先し追加レート制限を適用
+
+## 12. 検証コマンド
 ```bash
 pnpm --filter @idp/idp-server test
 pnpm --filter @idp/idp-server test -- rbac
 pnpm verify
 ```
 
-## 12. 実行チェックリスト
+## 13. 実行チェックリスト
+- [ ] Gate 0完了（Go判定記録）
+- [ ] ベースライン測定値の記録
 - [ ] `RBACCache` 実装（Redis + Noop）
 - [ ] `RBACService` の read-through cache 化
-- [ ] 権限変更時 invalidate 実装
+- [ ] invalidateトリガー実装
 - [ ] キャッシュ監視メトリクス追加
 - [ ] 1000 TPS負荷試験レポート作成
 - [ ] 段階ロールアウト完了

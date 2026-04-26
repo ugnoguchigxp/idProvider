@@ -25,11 +25,16 @@
 | `identity.google.linked` | Implemented | High | Google link成功 | RB-IDENTITY-MISLINK | 自身アカウント連携時に記録 |
 | `identity.google.unlinked` | Implemented | Medium | Google unlink成功 | RB-IDENTITY-MISLINK | provider別に記録 |
 | `admin.config.updated` | Implemented | Critical | admin設定変更 | RB-ADMIN-CONFIG | social/notification/template更新 |
+| `admin.access.denied` | Implemented | High | 管理APIの権限不足アクセス | RB-ADMIN-CONFIG | requiredPermission/path/methodをpayloadに保持 |
 | `key.rotation.scheduled` | Implemented | High | 起動時の定期ローテーション実行 | RB-KEY-COMPROMISE | due時のみ発火 |
 | `key.rotation.manual` | Implemented | Critical | 管理者手動ローテーション実行 | RB-KEY-COMPROMISE | 新旧kidをpayloadへ記録 |
 | `key.rotation.emergency` | Implemented | Critical | 緊急ローテーション実行 | RB-KEY-COMPROMISE | 旧鍵の即時失効を伴う |
 | `key.revoked` | Implemented | Critical | 緊急ローテーションで旧鍵失効 | RB-KEY-COMPROMISE | revoke対象kidを記録 |
 | `audit.export.generated` | Implemented | High | 監査ログエクスポート生成 | RB-AUDIT-INTEGRITY | exportIdとhashをpayloadに記録 |
+| `bot.challenge.missing` | Implemented | High | challenge必須APIでtoken未提出 | RB-BOT-MITIGATION | endpoint, action, ipAddress を記録 |
+| `bot.challenge.invalid` | Implemented | High | challenge検証失敗（action/hostname不一致含む） | RB-BOT-MITIGATION | errorCodes, actionOk, hostnameOk を記録 |
+| `bot.challenge.provider_error` | Implemented | Critical | challenge provider検証エラー | RB-BOT-MITIGATION | fail-open/fail-closed判断材料 |
+| `bot.risk.blocked` | Implemented | Critical | botリスク判定でブロック | RB-BOT-MITIGATION | endpoint, ipAddress, email(可能時) を記録 |
 
 ## 4. アラート方針
 - Critical: 即時ページング（オンコール）
@@ -52,7 +57,11 @@ where created_at >= now() - interval '1 hour'
     'key.rotation.manual',
     'key.rotation.emergency',
     'key.revoked',
-    'audit.export.generated'
+    'audit.export.generated',
+    'bot.challenge.missing',
+    'bot.challenge.invalid',
+    'bot.challenge.provider_error',
+    'bot.risk.blocked'
   )
 group by event_type
 order by c desc;

@@ -81,6 +81,7 @@ describe("Audit Routes", () => {
         }),
       },
       env: {
+        ADMIN_SOD_ENFORCED: true,
         OIDC_ISSUER: "https://issuer.example.com",
         OIDC_PORT: 3001,
         OAUTH_CLIENT_ID: "client",
@@ -164,7 +165,7 @@ describe("Audit Routes", () => {
   });
 
   it("GET /v1/admin/audit/logs requires admin", async () => {
-    deps.rbacService.authorizationCheck.mockResolvedValueOnce({
+    deps.rbacService.authorizationCheck.mockResolvedValue({
       allowed: false,
     });
 
@@ -173,5 +174,50 @@ describe("Audit Routes", () => {
     });
 
     expect(res.status).toBe(403);
+  });
+
+  describe("Validation Errors", () => {
+    it("returns 400 when from date is invalid", async () => {
+      const res = await app.request("/v1/admin/audit/logs?from=not-a-date", {
+        headers: authHeader,
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 400 when cursor is invalid base64/JSON", async () => {
+      const res = await app.request("/v1/admin/audit/logs?cursor=not-base64", {
+        headers: authHeader,
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 400 when cursor lacks required fields", async () => {
+      const invalidCursor = Buffer.from(
+        JSON.stringify({ wrong: "field" }),
+      ).toString("base64url");
+      const res = await app.request(
+        `/v1/admin/audit/logs?cursor=${invalidCursor}`,
+        {
+          headers: authHeader,
+        },
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 400 when from > to in export", async () => {
+      const res = await app.request("/v1/admin/audit/exports", {
+        method: "POST",
+        headers: {
+          ...authHeader,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          kind: "both",
+          from: "2026-05-01T00:00:00.000Z",
+          to: "2026-04-01T00:00:00.000Z",
+        }),
+      });
+      expect(res.status).toBe(400);
+    });
   });
 });

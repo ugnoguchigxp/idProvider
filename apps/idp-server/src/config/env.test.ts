@@ -52,4 +52,15 @@ describe("loadEnv", () => {
       }),
     ).toThrow(/METRICS_BEARER_TOKEN/);
   });
+
+  it("requires turnstile keys when enabled", () => {
+    expect(() =>
+      loadEnv({
+        ...baseEnv,
+        TURNSTILE_ENABLED: "true",
+        TURNSTILE_SECRET_KEY: "",
+        TURNSTILE_SITE_KEY: "",
+      }),
+    ).toThrow(/TURNSTILE_SECRET_KEY/);
+  });
 });

@@ -62,4 +62,85 @@ describe("UserRepository", () => {
       expect(db.update).toHaveBeenCalled();
     });
   });
+
+  describe("create", () => {
+    it("should create user, email, and password", async () => {
+      db.returning.mockImplementationOnce(() => [
+        { id: "u1", status: "active", createdAt: new Date() },
+      ]);
+
+      const result = await repository.create({
+        email: "a@b.com",
+        passwordHash: "hash",
+      });
+
+      expect(result.id).toBe("u1");
+      expect(db.insert).toHaveBeenCalledTimes(3); // users, userEmails, userPasswords
+    });
+
+    it("should create profile if displayName is provided", async () => {
+      db.returning.mockImplementationOnce(() => [
+        { id: "u1", status: "active", createdAt: new Date() },
+      ]);
+
+      const result = await repository.create({
+        email: "a@b.com",
+        passwordHash: "hash",
+        displayName: "John",
+      });
+
+      expect(result.id).toBe("u1");
+      expect(db.insert).toHaveBeenCalledTimes(4); // users, userEmails, userPasswords, userProfiles
+    });
+
+    it("should throw if user creation fails", async () => {
+      db.returning.mockImplementationOnce(() => []);
+
+      await expect(
+        repository.create({
+          email: "a@b.com",
+          passwordHash: "hash",
+        }),
+      ).rejects.toThrow("Failed to create user");
+    });
+  });
+
+  describe("createWithoutPassword", () => {
+    it("should create user and email", async () => {
+      db.returning.mockImplementationOnce(() => [
+        { id: "u1", status: "active", createdAt: new Date() },
+      ]);
+
+      const result = await repository.createWithoutPassword({
+        email: "a@b.com",
+      });
+
+      expect(result.id).toBe("u1");
+      expect(db.insert).toHaveBeenCalledTimes(2); // users, userEmails
+    });
+
+    it("should create user and set emailVerified", async () => {
+      db.returning.mockImplementationOnce(() => [
+        { id: "u1", status: "active", createdAt: new Date() },
+      ]);
+
+      const result = await repository.createWithoutPassword({
+        email: "a@b.com",
+        emailVerified: true,
+      });
+
+      expect(result.id).toBe("u1");
+      expect(db.insert).toHaveBeenCalledTimes(2);
+    });
+
+    it("should throw if user creation fails", async () => {
+      db.returning.mockImplementationOnce(() => []);
+
+      await expect(
+        repository.createWithoutPassword({
+          email: "a@b.com",
+        }),
+      ).rejects.toThrow("Failed to create user");
+    });
+  });
 });

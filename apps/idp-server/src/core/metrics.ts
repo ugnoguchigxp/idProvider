@@ -9,6 +9,12 @@ import {
 type DependencyName = "db" | "redis" | "oidc";
 
 type LoginResult = "success" | "failed";
+type BotChallengeResult = "passed" | "failed" | "missing" | "error";
+type BotProtectedEndpoint =
+  | "signup"
+  | "login"
+  | "google_login"
+  | "password_reset";
 
 const METRIC_PREFIX = "idp_";
 
@@ -82,6 +88,20 @@ const dependencyErrorsTotal = new Counter({
   registers: [register],
 });
 
+const botChallengeTotal = new Counter({
+  name: `${METRIC_PREFIX}bot_challenge_total`,
+  help: "Bot challenge verification results",
+  labelNames: ["endpoint", "result"],
+  registers: [register],
+});
+
+const botBlockTotal = new Counter({
+  name: `${METRIC_PREFIX}bot_block_total`,
+  help: "Bot mitigation request blocks by endpoint",
+  labelNames: ["endpoint"],
+  registers: [register],
+});
+
 export const observeHttpRequest = (input: {
   method: string;
   path: string;
@@ -124,6 +144,20 @@ export const markDependencyDown = (dependency: DependencyName) => {
 
 export const recordDependencyError = (dependency: DependencyName) => {
   dependencyErrorsTotal.inc({ dependency });
+};
+
+export const recordBotChallengeResult = (input: {
+  endpoint: BotProtectedEndpoint;
+  result: BotChallengeResult;
+}) => {
+  botChallengeTotal.inc({
+    endpoint: input.endpoint,
+    result: input.result,
+  });
+};
+
+export const recordBotBlock = (endpoint: BotProtectedEndpoint) => {
+  botBlockTotal.inc({ endpoint });
 };
 
 export const metricsRegistry = register;

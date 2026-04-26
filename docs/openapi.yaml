@@ -82,6 +82,11 @@ components:
           type: string
           minLength: 1
           maxLength: 80
+        challengeToken:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          description: Bot challenge token. Required when bot mitigation policy enforces challenge.
 
     SignupResponseProduction:
       type: object
@@ -163,6 +168,11 @@ components:
           type: string
           minLength: 20
           maxLength: 32
+        challengeToken:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          description: Bot challenge token. Required when risk policy requires challenge.
 
     GoogleLoginRequest:
       type: object
@@ -182,6 +192,11 @@ components:
           type: string
           minLength: 20
           maxLength: 32
+        challengeToken:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          description: Bot challenge token. Required when risk policy requires challenge.
 
     LoginResponse:
       type: object
@@ -365,6 +380,11 @@ components:
         email:
           type: string
           format: email
+        challengeToken:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          description: Bot challenge token. Required when bot mitigation policy enforces challenge.
 
     PasswordResetRequestResponse:
       type: object

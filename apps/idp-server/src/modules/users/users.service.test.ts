@@ -26,6 +26,7 @@ describe("UserService", () => {
       },
       userRepository: {
         findById: vi.fn(),
+        findByEmail: vi.fn(),
         update: vi.fn(),
         findWithPasswordById: vi.fn(),
       },
@@ -51,6 +52,28 @@ describe("UserService", () => {
       },
     };
     userService = new UserService(deps);
+  });
+
+  describe("findActiveUserIdByEmail", () => {
+    it("should return userId if active", async () => {
+      deps.userRepository.findByEmail.mockResolvedValue({
+        id: "u1",
+        status: "active",
+      });
+      const result = await userService.findActiveUserIdByEmail("a@b.com");
+      expect(result).toBe("u1");
+    });
+
+    it("should return null if not found or inactive", async () => {
+      deps.userRepository.findByEmail.mockResolvedValue({
+        id: "u1",
+        status: "suspended",
+      });
+      expect(await userService.findActiveUserIdByEmail("a@b.com")).toBeNull();
+
+      deps.userRepository.findByEmail.mockResolvedValue(null);
+      expect(await userService.findActiveUserIdByEmail("a@b.com")).toBeNull();
+    });
   });
 
   describe("getMe", () => {
@@ -79,6 +102,14 @@ describe("UserService", () => {
       expect(result.value.profile.displayName).toBe("Taro Yamada");
     });
 
+    it("rejects if user not found", async () => {
+      deps.userRepository.findById.mockResolvedValue(null);
+      await expect(userService.getMe("u1")).rejects.toMatchObject({
+        status: 404,
+        code: "user_not_found",
+      });
+    });
+
     it("rejects inactive users", async () => {
       deps.userRepository.findById.mockResolvedValue({
         id: "u1",
@@ -91,6 +122,31 @@ describe("UserService", () => {
         status: 401,
         code: "unauthorized",
       });
+    });
+  });
+
+  describe("getOidcAccount", () => {
+    it("returns mapped OIDC account response", async () => {
+      deps.userRepository.findById.mockResolvedValue({
+        id: "u1",
+        email: "test@example.com",
+        status: "active",
+        emailVerified: true,
+        profile: {
+          displayName: "Taro Yamada",
+          givenName: "Taro",
+          familyName: "Yamada",
+          preferredUsername: "taro",
+          locale: "ja-JP",
+          zoneinfo: "Asia/Tokyo",
+          updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+        },
+      });
+
+      const result = await userService.getOidcAccount("u1");
+      expect(result.userId).toBe("u1");
+      expect(result.emailVerified).toBe(true);
+      expect(result.profile.displayName).toBe("Taro Yamada");
     });
   });
 
@@ -245,6 +301,98 @@ describe("UserService", () => {
           email: "test@example.com",
         },
       });
+    });
+
+    it("throws if token is invalid", async () => {
+      const OAuth2ClientMock = (await import("google-auth-library"))
+        .OAuth2Client as any;
+      OAuth2ClientMock.mockImplementationOnce(() => ({
+        verifyIdToken: vi.fn().mockRejectedValue(new Error("invalid")),
+      }));
+
+      await expect(
+        userService.linkGoogleIdentity({
+          userId: "u1",
+          idToken: "bad",
+          clientId: "cid",
+        }),
+      ).rejects.toMatchObject({ code: "invalid_google_token" });
+    });
+
+    it("throws if token payload is missing email", async () => {
+      const OAuth2ClientMock = (await import("google-auth-library"))
+        .OAuth2Client as any;
+      OAuth2ClientMock.mockImplementationOnce(() => ({
+        verifyIdToken: vi.fn().mockResolvedValue({
+          getPayload: () => ({ sub: "sub1" }), // Missing email
+        }),
+      }));
+
+      await expect(
+        userService.linkGoogleIdentity({
+          userId: "u1",
+          idToken: "bad",
+          clientId: "cid",
+        }),
+      ).rejects.toMatchObject({ code: "invalid_google_token" });
+    });
+
+    it("throws if email mismatches user's primary email", async () => {
+      deps.userRepository.findById.mockResolvedValue({
+        id: "u1",
+        email: "other@example.com",
+        status: "active",
+        profile: {},
+      });
+
+      await expect(
+        userService.linkGoogleIdentity({
+          userId: "u1",
+          idToken: "tok",
+          clientId: "cid",
+        }),
+      ).rejects.toMatchObject({ code: "email_mismatch" });
+    });
+
+    it("throws if identity is already linked to another user", async () => {
+      deps.userRepository.findById.mockResolvedValue({
+        id: "u1",
+        email: "test@example.com",
+        status: "active",
+        profile: {},
+      });
+      deps.identityRepository.findByProvider.mockResolvedValue({
+        userId: "u2",
+      });
+
+      await expect(
+        userService.linkGoogleIdentity({
+          userId: "u1",
+          idToken: "tok",
+          clientId: "cid",
+        }),
+      ).rejects.toMatchObject({ code: "google_identity_in_use" });
+    });
+
+    it("does not create identity if it is already linked to the same user", async () => {
+      deps.userRepository.findById.mockResolvedValue({
+        id: "u1",
+        email: "test@example.com",
+        status: "active",
+        profile: {},
+      });
+      deps.identityRepository.findByProvider.mockResolvedValue({
+        userId: "u1",
+      });
+
+      const result = await userService.linkGoogleIdentity({
+        userId: "u1",
+        idToken: "tok",
+        clientId: "cid",
+      });
+
+      expect(result.ok).toBe(true);
+      expect(deps.identityRepository.create).not.toHaveBeenCalled();
     });
   });
 

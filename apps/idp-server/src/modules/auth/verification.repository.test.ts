@@ -27,9 +27,25 @@ describe("VerificationRepository", () => {
       expect(db.insert).toHaveBeenCalled();
     });
 
-    it("should consume email token", async () => {
-      await repository.consumeEmailToken("v1");
+    it("should consume email token and return boolean", async () => {
+      db.returning.mockImplementationOnce(() => [{ id: "v1" }]);
+      const result1 = await repository.consumeEmailToken("v1");
       expect(db.update).toHaveBeenCalled();
+      expect(result1).toBe(true);
+
+      db.returning.mockImplementationOnce(() => []);
+      const result2 = await repository.consumeEmailToken("v2");
+      expect(result2).toBe(false);
+    });
+
+    it("should consume valid email token by hash", async () => {
+      db.returning.mockImplementationOnce(() => [{ id: "v1", userId: "u1" }]);
+      const result1 = await repository.consumeValidEmailTokenByHash("hash1");
+      expect(result1).toEqual({ id: "v1", userId: "u1" });
+
+      db.returning.mockImplementationOnce(() => []);
+      const result2 = await repository.consumeValidEmailTokenByHash("hash2");
+      expect(result2).toBeNull();
     });
   });
 
@@ -49,9 +65,25 @@ describe("VerificationRepository", () => {
       expect(db.insert).toHaveBeenCalled();
     });
 
-    it("should consume password token", async () => {
-      await repository.consumePasswordToken("p1");
+    it("should consume password token and return boolean", async () => {
+      db.returning.mockImplementationOnce(() => [{ id: "p1" }]);
+      const result1 = await repository.consumePasswordToken("p1");
       expect(db.update).toHaveBeenCalled();
+      expect(result1).toBe(true);
+
+      db.returning.mockImplementationOnce(() => []);
+      const result2 = await repository.consumePasswordToken("p2");
+      expect(result2).toBe(false);
+    });
+
+    it("should consume valid password token by hash", async () => {
+      db.returning.mockImplementationOnce(() => [{ id: "p1", userId: "u1" }]);
+      const result1 = await repository.consumeValidPasswordTokenByHash("hash1");
+      expect(result1).toEqual({ id: "p1", userId: "u1" });
+
+      db.returning.mockImplementationOnce(() => []);
+      const result2 = await repository.consumeValidPasswordTokenByHash("hash2");
+      expect(result2).toBeNull();
     });
   });
 });

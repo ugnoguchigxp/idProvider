@@ -7,7 +7,10 @@ import {
 } from "@idp/shared";
 import { Hono } from "hono";
 import { authenticatedEndpointAdapter } from "../../adapters/authenticated-endpoint-adapter.js";
+import type { AppEnv } from "../../config/env.js";
+import type { AuditRepository } from "../audit/audit.repository.js";
 import type { AuthService } from "../auth/auth.service.js";
+import { assertAdminPermission } from "../rbac/admin-authorization.js";
 import type { RBACService } from "../rbac/rbac.service.js";
 import type { OAuthClientService } from "./oauth-client.service.js";
 
@@ -15,20 +18,8 @@ export type OAuthClientAdminRoutesDependencies = {
   authService: AuthService;
   rbacService: RBACService;
   oauthClientService: OAuthClientService;
-};
-
-const assertAdmin = async (
-  deps: OAuthClientAdminRoutesDependencies,
-  userId: string,
-) => {
-  const auth = await deps.rbacService.authorizationCheck({
-    userId,
-    resource: "admin",
-    action: "manage",
-  });
-  if (!auth.allowed) {
-    throw new ApiError(403, "forbidden", "Admin privilege is required");
-  }
+  auditRepository: AuditRepository;
+  env: AppEnv;
 };
 
 export const createOAuthClientRoutes = (
@@ -45,8 +36,14 @@ export const createOAuthClientRoutes = (
     authenticatedEndpointAdapter({
       schema: emptyRequestSchema,
       authenticate,
-      handler: async (_c, _payload, auth) => {
-        await assertAdmin(deps, auth.userId);
+      handler: async (c, _payload, auth) => {
+        await assertAdminPermission(deps, {
+          userId: auth.userId,
+          resource: "admin.oauth_client",
+          action: "read",
+          path: c.req.path,
+          method: c.req.method,
+        });
         const result = await deps.oauthClientService.listClients();
         if (!result.ok) throw result.error;
         return result.value;
@@ -59,8 +56,14 @@ export const createOAuthClientRoutes = (
     authenticatedEndpointAdapter({
       schema: oauthClientCreateSchema,
       authenticate,
-      handler: async (_c, payload, auth) => {
-        await assertAdmin(deps, auth.userId);
+      handler: async (c, payload, auth) => {
+        await assertAdminPermission(deps, {
+          userId: auth.userId,
+          resource: "admin.oauth_client",
+          action: "write",
+          path: c.req.path,
+          method: c.req.method,
+        });
         const createInput = {
           name: payload.name,
           clientType: payload.clientType,
@@ -91,7 +94,13 @@ export const createOAuthClientRoutes = (
       schema: oauthClientUpdateSchema,
       authenticate,
       handler: async (c, payload, auth) => {
-        await assertAdmin(deps, auth.userId);
+        await assertAdminPermission(deps, {
+          userId: auth.userId,
+          resource: "admin.oauth_client",
+          action: "write",
+          path: c.req.path,
+          method: c.req.method,
+        });
         const clientId = c.req.param("clientId");
         if (!clientId) {
           throw new ApiError(400, "invalid_request", "clientId is required");
@@ -129,7 +138,13 @@ export const createOAuthClientRoutes = (
       schema: oauthClientRotateSecretSchema,
       authenticate,
       handler: async (c, payload, auth) => {
-        await assertAdmin(deps, auth.userId);
+        await assertAdminPermission(deps, {
+          userId: auth.userId,
+          resource: "admin.oauth_client",
+          action: "write",
+          path: c.req.path,
+          method: c.req.method,
+        });
         const clientId = c.req.param("clientId");
         if (!clientId) {
           throw new ApiError(400, "invalid_request", "clientId is required");
@@ -151,7 +166,13 @@ export const createOAuthClientRoutes = (
       schema: emptyRequestSchema,
       authenticate,
       handler: async (c, _payload, auth) => {
-        await assertAdmin(deps, auth.userId);
+        await assertAdminPermission(deps, {
+          userId: auth.userId,
+          resource: "admin.oauth_client",
+          action: "write",
+          path: c.req.path,
+          method: c.req.method,
+        });
         const clientId = c.req.param("clientId");
         if (!clientId) {
           throw new ApiError(400, "invalid_request", "clientId is required");
@@ -173,7 +194,13 @@ export const createOAuthClientRoutes = (
       schema: emptyRequestSchema,
       authenticate,
       handler: async (c, _payload, auth) => {
-        await assertAdmin(deps, auth.userId);
+        await assertAdminPermission(deps, {
+          userId: auth.userId,
+          resource: "admin.oauth_client",
+          action: "write",
+          path: c.req.path,
+          method: c.req.method,
+        });
         const clientId = c.req.param("clientId");
         if (!clientId) {
           throw new ApiError(400, "invalid_request", "clientId is required");

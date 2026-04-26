@@ -143,6 +143,55 @@ describe("AccountDeletionService", () => {
         }),
       ).rejects.toThrow("database unavailable");
     });
+
+    it("should throw if user is deleted but schedule is not found", async () => {
+      deps.userRepository.findById.mockResolvedValue({
+        id: "u1",
+        status: "deleted",
+      });
+      deps.accountDeletionRepository.findDeletionScheduleByUserId.mockResolvedValue(
+        null,
+      );
+
+      await expect(
+        service.requestDeletion("u1", {
+          currentPassword: "password",
+        }),
+      ).rejects.toMatchObject({ status: 401 });
+    });
+
+    it("should mark user as deleted if MFA is correct", async () => {
+      deps.userRepository.findById.mockResolvedValue({
+        id: "u1",
+        status: "active",
+      });
+      deps.mfaService.verifyMfa.mockResolvedValueOnce({ ok: true });
+
+      const result = await service.requestDeletion("u1", {
+        mfaCode: "123456",
+        mfaFactorId: "fid",
+      });
+      expect(result.ok).toBe(true);
+      expect(deps.accountDeletionRepository.markAsDeleted).toHaveBeenCalled();
+    });
+
+    it("should throw if password is invalid", async () => {
+      deps.userRepository.findById.mockResolvedValue({
+        id: "u1",
+        status: "active",
+      });
+      deps.userRepository.findWithPasswordById.mockResolvedValue({
+        id: "u1",
+        passwordHash: "hashed",
+      });
+      vi.spyOn(passwordModule, "verifyPassword").mockResolvedValueOnce(false);
+
+      await expect(
+        service.requestDeletion("u1", {
+          currentPassword: "wrong",
+        }),
+      ).rejects.toMatchObject({ status: 401 });
+    });
   });
 
   describe("finalizeDueDeletions", () => {
@@ -176,6 +225,24 @@ describe("AccountDeletionService", () => {
       expect(
         deps.accountDeletionRepository.physicallyDeleteUser,
       ).not.toHaveBeenCalled();
+    });
+
+    it("should increment failed count if physicallyDeleteUser throws", async () => {
+      deps.accountDeletionRepository.findDueDeletions.mockResolvedValue([
+        { id: "u1" },
+      ]);
+      deps.accountDeletionRepository.hasActiveLegalHold.mockResolvedValue(
+        false,
+      );
+      deps.accountDeletionRepository.physicallyDeleteUser.mockRejectedValue(
+        new Error("db error"),
+      );
+
+      const summary = await service.finalizeDueDeletions();
+      expect(summary.processed).toBe(1);
+      expect(summary.failed).toBe(1);
+      expect(summary.deleted).toBe(0);
+      expect(deps.logger.error).toHaveBeenCalled();
     });
   });
 });

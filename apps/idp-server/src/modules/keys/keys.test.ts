@@ -52,6 +52,7 @@ describe("Key Management Routes", () => {
         createSecurityEvent: vi.fn(),
       },
       env: {
+        ADMIN_SOD_ENFORCED: true,
         OIDC_ISSUER: "https://issuer.example.com",
         OIDC_PORT: 3001,
         OAUTH_CLIENT_ID: "client",
@@ -92,7 +93,7 @@ describe("Key Management Routes", () => {
   });
 
   it("POST /v1/admin/keys/rotate-emergency requires admin", async () => {
-    deps.rbacService.authorizationCheck.mockResolvedValueOnce({
+    deps.rbacService.authorizationCheck.mockResolvedValue({
       allowed: false,
     });
     const res = await app.request("/v1/admin/keys/rotate-emergency", {

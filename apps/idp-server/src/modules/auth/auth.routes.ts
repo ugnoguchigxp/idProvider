@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { ConfigService } from "@idp/auth-core";
 import {
   ApiError,
@@ -17,8 +18,13 @@ import type pino from "pino";
 import { authenticatedEndpointAdapter } from "../../adapters/authenticated-endpoint-adapter.js";
 import { publicEndpointAdapter } from "../../adapters/public-endpoint-adapter.js";
 import type { AppEnv } from "../../config/env.js";
+import {
+  recordBotBlock,
+  recordBotChallengeResult,
+} from "../../core/metrics.js";
 import type { RateLimiter } from "../../core/rate-limiter.js";
 import { createOpaqueToken } from "../../core/tokens.js";
+import { verifyTurnstileToken } from "../../core/turnstile.js";
 import { clearCookie, serializeCookie } from "../../utils/cookie.js";
 import { getIpAddress } from "../../utils/ip-address.js";
 import type { OAuthClientService } from "../oauth-clients/oauth-client.service.js";
@@ -35,8 +41,123 @@ export type AuthRoutesDependencies = {
 
 export const createAuthRoutes = (deps: AuthRoutesDependencies) => {
   const app = new Hono();
+  const requiredChallengeActions = new Set(
+    deps.env.TURNSTILE_REQUIRED_ACTIONS ?? [],
+  );
   const secureCookie = deps.env.NODE_ENV === "production";
   const accessTokenMaxAge = deps.env.ACCESS_TOKEN_TTL_SECONDS ?? 900;
+  const botChallengeEnabled = deps.env.TURNSTILE_ENABLED ?? false;
+
+  const getLoginRiskLevel = async (input: {
+    endpoint: "login" | "google_login";
+    email?: string;
+    ipAddress: string | null;
+    userAgent: string | null;
+  }) => {
+    if (typeof deps.authService.assessBotRiskForLogin !== "function") {
+      return "low" as const;
+    }
+    return deps.authService.assessBotRiskForLogin(input);
+  };
+
+  const recordBotEvent = async (
+    eventType: string,
+    payload: Record<string, unknown>,
+  ) => {
+    if (typeof deps.authService.recordSecurityEvent !== "function") {
+      return;
+    }
+    await deps.authService.recordSecurityEvent(eventType, null, payload);
+  };
+
+  const verifyChallengeOrThrow = async (input: {
+    endpoint: "signup" | "login" | "google_login" | "password_reset";
+    action: "signup" | "login" | "google_login" | "password_reset";
+    ipAddress: string | null;
+    token: string | undefined;
+    failOpenOnProviderError: boolean;
+  }) => {
+    if (!botChallengeEnabled) {
+      return;
+    }
+
+    if (!input.token) {
+      recordBotChallengeResult({ endpoint: input.endpoint, result: "missing" });
+      recordBotBlock(input.endpoint);
+      await recordBotEvent("bot.challenge.missing", {
+        endpoint: input.endpoint,
+        action: input.action,
+        ipAddress: input.ipAddress,
+      });
+      throw new ApiError(
+        400,
+        "challenge_required",
+        "Bot challenge token is required",
+      );
+    }
+
+    try {
+      const verification = await verifyTurnstileToken({
+        verifyUrl: deps.env.TURNSTILE_VERIFY_URL,
+        secretKey: deps.env.TURNSTILE_SECRET_KEY,
+        token: input.token,
+        remoteIp: input.ipAddress,
+        idempotencyKey: randomUUID(),
+      });
+      const hostnameOk =
+        deps.env.TURNSTILE_EXPECTED_HOSTNAME.trim().length === 0 ||
+        verification.hostname === deps.env.TURNSTILE_EXPECTED_HOSTNAME;
+      const actionOk = verification.action === input.action;
+
+      if (!verification.ok || !actionOk || !hostnameOk) {
+        recordBotChallengeResult({
+          endpoint: input.endpoint,
+          result: "failed",
+        });
+        recordBotBlock(input.endpoint);
+        await recordBotEvent("bot.challenge.invalid", {
+          endpoint: input.endpoint,
+          action: input.action,
+          ipAddress: input.ipAddress,
+          verifiedAction: verification.action ?? null,
+          hostname: verification.hostname ?? null,
+          errorCodes: verification.errorCodes,
+          actionOk,
+          hostnameOk,
+        });
+        throw new ApiError(
+          401,
+          "invalid_challenge",
+          "Invalid bot challenge token",
+        );
+      }
+
+      recordBotChallengeResult({ endpoint: input.endpoint, result: "passed" });
+    } catch (error) {
+      if (error instanceof ApiError) {
+        throw error;
+      }
+      recordBotChallengeResult({ endpoint: input.endpoint, result: "error" });
+      await recordBotEvent("bot.challenge.provider_error", {
+        endpoint: input.endpoint,
+        action: input.action,
+        ipAddress: input.ipAddress,
+        error: String(error),
+      });
+      if (!input.failOpenOnProviderError) {
+        recordBotBlock(input.endpoint);
+        throw new ApiError(
+          503,
+          "challenge_provider_unavailable",
+          "Bot challenge verification is temporarily unavailable",
+        );
+      }
+      deps.logger.warn(
+        { endpoint: input.endpoint, error },
+        "turnstile verification failed; fail-open applied",
+      );
+    }
+  };
   const setAuthCookies = (c: Context, accessToken: string) => {
     const csrfToken = createOpaqueToken("csrf");
     c.header(
@@ -103,6 +224,16 @@ export const createAuthRoutes = (deps: AuthRoutesDependencies) => {
         if (!rate.allowed) {
           throw new ApiError(429, "rate_limited", "Too many signup attempts");
         }
+        const requireChallenge = requiredChallengeActions.has("signup");
+        if (requireChallenge) {
+          await verifyChallengeOrThrow({
+            endpoint: "signup",
+            action: "signup",
+            ipAddress,
+            token: payload.challengeToken,
+            failOpenOnProviderError: false,
+          });
+        }
 
         const result = await deps.authService.signup(
           payload.email,
@@ -129,6 +260,39 @@ export const createAuthRoutes = (deps: AuthRoutesDependencies) => {
         );
         if (!rate.allowed) {
           throw new ApiError(429, "rate_limited", "Too many login attempts");
+        }
+        const riskLevel = await getLoginRiskLevel({
+          endpoint: "login",
+          email: payload.email,
+          ipAddress,
+          userAgent,
+        });
+        if (riskLevel === "high") {
+          recordBotBlock("login");
+          await recordBotEvent("bot.risk.blocked", {
+            endpoint: "login",
+            ipAddress,
+            email: payload.email,
+          });
+          throw new ApiError(
+            403,
+            "bot_risk_blocked",
+            "Request blocked by bot risk policy",
+          );
+        }
+
+        const loginMode = deps.env.TURNSTILE_ENFORCE_LOGIN_MODE ?? "risk";
+        const requireChallenge =
+          loginMode === "always" ||
+          (loginMode === "risk" && riskLevel === "medium");
+        if (requireChallenge) {
+          await verifyChallengeOrThrow({
+            endpoint: "login",
+            action: "login",
+            ipAddress,
+            token: payload.challengeToken,
+            failOpenOnProviderError: true,
+          });
         }
 
         const result = await deps.authService.login(
@@ -165,6 +329,37 @@ export const createAuthRoutes = (deps: AuthRoutesDependencies) => {
         );
         if (!rate.allowed) {
           throw new ApiError(429, "rate_limited", "Too many login attempts");
+        }
+        const riskLevel = await getLoginRiskLevel({
+          endpoint: "google_login",
+          ipAddress,
+          userAgent,
+        });
+        if (riskLevel === "high") {
+          recordBotBlock("google_login");
+          await recordBotEvent("bot.risk.blocked", {
+            endpoint: "google_login",
+            ipAddress,
+          });
+          throw new ApiError(
+            403,
+            "bot_risk_blocked",
+            "Request blocked by bot risk policy",
+          );
+        }
+
+        const loginMode = deps.env.TURNSTILE_ENFORCE_LOGIN_MODE ?? "risk";
+        const requireChallenge =
+          loginMode === "always" ||
+          (loginMode === "risk" && riskLevel === "medium");
+        if (requireChallenge) {
+          await verifyChallengeOrThrow({
+            endpoint: "google_login",
+            action: "google_login",
+            ipAddress,
+            token: payload.challengeToken,
+            failOpenOnProviderError: true,
+          });
         }
 
         const result = await deps.authService.loginWithGoogle({
@@ -342,6 +537,16 @@ export const createAuthRoutes = (deps: AuthRoutesDependencies) => {
             "rate_limited",
             "Too many password reset attempts",
           );
+        }
+        const requireChallenge = requiredChallengeActions.has("password_reset");
+        if (requireChallenge) {
+          await verifyChallengeOrThrow({
+            endpoint: "password_reset",
+            action: "password_reset",
+            ipAddress,
+            token: payload.challengeToken,
+            failOpenOnProviderError: false,
+          });
         }
         const result = await deps.authService.requestPasswordReset(
           payload.email,

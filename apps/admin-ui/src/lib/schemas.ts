@@ -20,4 +20,13 @@ export const adminConfigsResponseSchema = z.object({
   }),
 });
 
+export const authorizationCheckResponseSchema = z.object({
+  allowed: z.boolean(),
+  permissionKey: z.string(),
+  source: z.string().nullable().optional(),
+});
+
 export type AdminConfigsResponse = z.infer<typeof adminConfigsResponseSchema>;
+export type AuthorizationCheckResponse = z.infer<
+  typeof authorizationCheckResponseSchema
+>;

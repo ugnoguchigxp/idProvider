@@ -33,6 +33,8 @@ export type AuthServiceDependencies = {
   logger: pino.Logger;
 };
 
+export type BotRiskLevel = "low" | "medium" | "high";
+
 export class AuthService {
   constructor(private deps: AuthServiceDependencies) {}
 
@@ -53,6 +55,66 @@ export class AuthService {
         "failed to persist security event",
       );
     }
+  }
+
+  async recordSecurityEvent(
+    eventType: string,
+    userId: string | null,
+    payload: Record<string, unknown> = {},
+  ) {
+    await this.createSecurityEvent(eventType, userId, payload);
+  }
+
+  async assessBotRiskForLogin(input: {
+    endpoint: "login" | "google_login";
+    email?: string;
+    ipAddress: string | null;
+    userAgent: string | null;
+  }): Promise<BotRiskLevel> {
+    const threshold = this.deps.env.BOT_RISK_LOGIN_THRESHOLD_PER_WINDOW;
+    const windowSeconds = this.deps.env.BOT_RISK_WINDOW_SECONDS;
+    const mediumWatermark = Math.max(
+      0,
+      Math.floor(
+        threshold * (this.deps.env.BOT_RISK_MEDIUM_WATERMARK_PERCENT / 100),
+      ),
+    );
+
+    const ipRate = await this.deps.rateLimiter.consume(
+      `bot-risk:${input.endpoint}:ip:${input.ipAddress ?? "unknown"}`,
+      threshold,
+      windowSeconds,
+    );
+    if (!ipRate.allowed) {
+      return "high";
+    }
+
+    if (!input.userAgent || input.userAgent.trim().length === 0) {
+      return "medium";
+    }
+
+    if (input.email) {
+      const emailRate = await this.deps.rateLimiter.consume(
+        `bot-risk:${input.endpoint}:email:${input.email}`,
+        threshold,
+        windowSeconds,
+      );
+      if (!emailRate.allowed) {
+        return "high";
+      }
+      if (
+        emailRate.remaining <= mediumWatermark ||
+        ipRate.remaining <= mediumWatermark
+      ) {
+        return "medium";
+      }
+      return "low";
+    }
+
+    if (ipRate.remaining <= mediumWatermark) {
+      return "medium";
+    }
+    return "low";
   }
 
   private async enforceMfaForLogin(

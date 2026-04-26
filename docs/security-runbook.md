@@ -133,6 +133,39 @@ Recovery:
 Exit Criteria:
 - 設定の正当性を二者承認
 
+### RB-BOT-MITIGATION: ボット攻撃/誤検知対応
+Trigger:
+- `bot.challenge.invalid` または `bot.challenge.provider_error` が急増
+- `bot.risk.blocked` が閾値を超過
+
+Triage:
+```sql
+select event_type, count(*)
+from security_events
+where event_type in (
+  'bot.challenge.missing',
+  'bot.challenge.invalid',
+  'bot.challenge.provider_error',
+  'bot.risk.blocked'
+)
+  and created_at >= now() - interval '30 minutes'
+group by event_type
+order by count(*) desc;
+```
+
+Containment:
+1. WAF の login/signup 制限を一時強化
+2. `TURNSTILE_ENFORCE_LOGIN_MODE` を `off` / `risk` / `always` で切り替え
+3. provider 障害時は login を fail-open で継続し、signup/reset を一時制限
+
+Recovery:
+1. challenge 成功/失敗率を監視し閾値を段階調整
+2. 誤検知が高い場合は login の challenge 強制度を緩和
+
+Exit Criteria:
+- 30分連続で bot block / invalid challenge が平常値
+- 一時設定変更の記録が運用ログに残っている
+
 ### RB-ACCOUNT-DELETE: account deletion abuse
 Trigger:
 - `account.deletion.requested` の急増
