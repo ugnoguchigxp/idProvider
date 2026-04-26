@@ -7,15 +7,29 @@ describe("oidc-provider factory", () => {
       OAUTH_CLIENT_ID: "cid",
       OAUTH_CLIENT_SECRET: "csec",
       OIDC_ISSUER: "https://issuer.com",
-      NODE_ENV: "test",
+      NODE_ENV: "production",
     };
     const jwks = { keys: [] };
     const authService: any = {
       getMe: vi.fn(),
       getAuthorizationSnapshot: vi.fn(),
     };
+    const noopAdapterFactory = vi.fn(() => ({
+      upsert: vi.fn(async () => {}),
+      find: vi.fn(async () => undefined),
+      findByUserCode: vi.fn(async () => undefined),
+      findByUid: vi.fn(async () => undefined),
+      consume: vi.fn(async () => {}),
+      destroy: vi.fn(async () => {}),
+      revokeByGrantId: vi.fn(async () => {}),
+    }));
 
-    const provider = createOidcProvider(env, jwks, authService);
+    const provider = createOidcProvider(
+      env,
+      jwks,
+      authService,
+      noopAdapterFactory,
+    );
     expect(provider).toBeDefined();
     expect(provider.issuer).toBe("https://issuer.com");
   });

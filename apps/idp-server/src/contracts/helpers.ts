@@ -1,7 +1,7 @@
 import { ApiError, ok } from "@idp/shared";
 import { vi } from "vitest";
 
-export const createContractDeps = () => ({
+export const createContractDeps = (): Record<string, unknown> => ({
   env: {
     OIDC_ISSUER: "https://issuer.example.com",
     OIDC_PORT: 3001,
