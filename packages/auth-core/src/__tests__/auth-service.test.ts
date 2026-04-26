@@ -14,15 +14,17 @@ vi.mock("argon2", () => ({
 
 // Mock google-auth-library
 vi.mock("google-auth-library", () => ({
-  OAuth2Client: vi.fn().mockImplementation(() => ({
-    verifyIdToken: vi.fn().mockResolvedValue({
-      getPayload: () => ({
-        sub: "google-sub-1",
-        email: "google@example.com",
-        email_verified: true,
+  OAuth2Client: vi.fn(function MockOAuth2Client() {
+    return {
+      verifyIdToken: vi.fn().mockResolvedValue({
+        getPayload: () => ({
+          sub: "google-sub-1",
+          email: "google@example.com",
+          email_verified: true,
+        }),
       }),
-    }),
-  })),
+    };
+  }),
 }));
 
 // Mock otplib

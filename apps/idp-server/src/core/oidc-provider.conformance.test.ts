@@ -4,7 +4,7 @@ import { createOidcProvider } from "./oidc-provider.js";
 const providerSpy = vi.fn();
 
 vi.mock("oidc-provider", () => ({
-  Provider: vi.fn().mockImplementation((issuer, configuration) => {
+  Provider: vi.fn(function MockProvider(issuer, configuration) {
     providerSpy(issuer, configuration);
     return {
       issuer,

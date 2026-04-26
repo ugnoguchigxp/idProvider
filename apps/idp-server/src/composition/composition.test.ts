@@ -14,9 +14,15 @@ vi.mock("@idp/db", () => {
 vi.mock("@idp/auth-core", () => {
   return {
     createRedisClient: vi.fn(() => ({})),
-    ConfigService: vi.fn().mockImplementation(() => ({})),
-    KeyStoreService: vi.fn().mockImplementation(() => ({})),
-    WebAuthnService: vi.fn().mockImplementation(() => ({})),
+    ConfigService: vi.fn(function MockConfigService() {
+      return {};
+    }),
+    KeyStoreService: vi.fn(function MockKeyStoreService() {
+      return {};
+    }),
+    WebAuthnService: vi.fn(function MockWebAuthnService() {
+      return {};
+    }),
   };
 });
 
@@ -40,7 +46,9 @@ vi.mock("../core/security-notifier.js", () => {
 
 vi.mock("../core/rate-limiter.js", () => {
   return {
-    RateLimiter: vi.fn().mockImplementation(() => ({})),
+    RateLimiter: vi.fn(function MockRateLimiter() {
+      return {};
+    }),
   };
 });
 

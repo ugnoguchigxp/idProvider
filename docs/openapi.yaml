@@ -39,10 +39,14 @@ components:
       properties:
         code:
           type: string
+          description: Error code. Common values include invalid_client, invalid_token, mfa_required, rate_limited, unauthorized.
         message:
           type: string
         traceId:
           type: string
+      example:
+        code: invalid_client
+        message: OAuth client authentication required
 
     EmptyObject:
       type: object
@@ -1354,11 +1358,22 @@ paths:
                   - $ref: '#/components/schemas/LoginResponse'
                   - $ref: '#/components/schemas/MfaRequiredResponse'
         '401':
-          description: Invalid credentials
+          description: Invalid credentials or MFA step-up required
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidCredentials:
+                  summary: Invalid credentials
+                  value:
+                    code: invalid_credentials
+                    message: Invalid credentials
+                mfaRequired:
+                  summary: MFA step-up required
+                  value:
+                    code: mfa_required
+                    message: MFA verification is required
         '403':
           description: Email not verified
           content:
@@ -1437,12 +1452,29 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidClient:
+                  summary: Invalid OAuth client
+                  value:
+                    code: invalid_client
+                    message: OAuth client authentication required
+                invalidToken:
+                  summary: Invalid or expired refresh token
+                  value:
+                    code: invalid_token
+                    message: Invalid or expired refresh token
         '429':
           description: Rate limited
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                rateLimited:
+                  summary: OAuth token endpoint is rate limited
+                  value:
+                    code: rate_limited
+                    message: Too many OAuth token requests
 
   /v1/token/refresh:
     post:
@@ -2890,12 +2922,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidClient:
+                  value:
+                    code: invalid_client
+                    message: OAuth client authentication required
         '429':
           description: Rate limited
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                rateLimited:
+                  value:
+                    code: rate_limited
+                    message: Too many OAuth revocation requests
 
   /oauth/introspection:
     post:
@@ -2925,9 +2967,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidClient:
+                  value:
+                    code: invalid_client
+                    message: OAuth client authentication required
         '429':
           description: Rate limited
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                rateLimited:
+                  value:
+                    code: rate_limited
+                    message: Too many OAuth introspection requests

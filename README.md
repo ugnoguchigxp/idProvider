@@ -74,6 +74,8 @@ Hono ベースの API と `oidc-provider` を組み合わせ、OIDC/OAuth2、認
 │   ├── db/                         # Drizzle schema / DB client
 │   ├── shared/                     # Zod schema / 共通エラー
 │   ├── oidc-client-sdk/            # OIDC クライアント SDK
+│   ├── mobile-kotlin-sdk/          # Kotlin モバイルSDK (MVP)
+│   ├── mobile-swift-sdk/           # Swift モバイルSDK (MVP)
 │   └── server-sdk/                 # サーバー統合向け SDK
 ├── infra/
 │   ├── docker-compose.yml          # Postgres / Redis
@@ -275,13 +277,18 @@ pnpm verify
 - `pnpm verify:security` (`pnpm audit --audit-level=high`)
 - `pnpm verify:contract` (`apps/idp-server` の OpenAPI 契約テストのみ実行)
 - `pnpm verify:oidc-conformance` (OIDC/OAuth conformance focused test + OpenAPI lint)
+- `pnpm verify:example-bff-e2e` (`apps/example-bff` の統合E2E)
 
 ## ドキュメント
 
 - OpenAPI: [`docs/openapi.yaml`](docs/openapi.yaml)
 - 管理UI計画: [`docs/admin-ui-plan.md`](docs/admin-ui-plan.md)
 - Google連携設計: [`docs/google-federation.md`](docs/google-federation.md)
-- OIDC Client 計画: [`docs/oidc-client.md`](docs/oidc-client.md)
+- OIDC Client 契約: [`docs/oidc-client.md`](docs/oidc-client.md)
+- OIDC互換マトリクス: [`docs/oidc-compatibility.md`](docs/oidc-compatibility.md)
+- SDKサンプル (Node): [`docs/samples/sdk-node-example.md`](docs/samples/sdk-node-example.md)
+- SDKサンプル (Kotlin): [`docs/samples/sdk-kotlin-example.md`](docs/samples/sdk-kotlin-example.md)
+- SDKサンプル (Swift): [`docs/samples/sdk-swift-example.md`](docs/samples/sdk-swift-example.md)
 - OpenID Conformance Suite Runbook: [`docs/openid-conformance-suite-runbook.md`](docs/openid-conformance-suite-runbook.md)
 - QA/性能計画: [`docs/qa-and-performance-plan.md`](docs/qa-and-performance-plan.md)
 

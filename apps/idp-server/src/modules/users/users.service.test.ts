@@ -4,15 +4,17 @@ import { hashPassword } from "../../core/password.js";
 import { UserService } from "./users.service.js";
 
 vi.mock("google-auth-library", () => ({
-  OAuth2Client: vi.fn().mockImplementation(() => ({
-    verifyIdToken: vi.fn().mockResolvedValue({
-      getPayload: () => ({
-        sub: "google-sub-1",
-        email: "test@example.com",
-        email_verified: true,
+  OAuth2Client: vi.fn(function MockOAuth2Client() {
+    return {
+      verifyIdToken: vi.fn().mockResolvedValue({
+        getPayload: () => ({
+          sub: "google-sub-1",
+          email: "test@example.com",
+          email_verified: true,
+        }),
       }),
-    }),
-  })),
+    };
+  }),
 }));
 
 describe("UserService", () => {
@@ -306,9 +308,11 @@ describe("UserService", () => {
     it("throws if token is invalid", async () => {
       const OAuth2ClientMock = (await import("google-auth-library"))
         .OAuth2Client as any;
-      OAuth2ClientMock.mockImplementationOnce(() => ({
-        verifyIdToken: vi.fn().mockRejectedValue(new Error("invalid")),
-      }));
+      OAuth2ClientMock.mockImplementationOnce(function MockOAuth2Client() {
+        return {
+          verifyIdToken: vi.fn().mockRejectedValue(new Error("invalid")),
+        };
+      });
 
       await expect(
         userService.linkGoogleIdentity({
@@ -322,11 +326,13 @@ describe("UserService", () => {
     it("throws if token payload is missing email", async () => {
       const OAuth2ClientMock = (await import("google-auth-library"))
         .OAuth2Client as any;
-      OAuth2ClientMock.mockImplementationOnce(() => ({
-        verifyIdToken: vi.fn().mockResolvedValue({
-          getPayload: () => ({ sub: "sub1" }), // Missing email
-        }),
-      }));
+      OAuth2ClientMock.mockImplementationOnce(function MockOAuth2Client() {
+        return {
+          verifyIdToken: vi.fn().mockResolvedValue({
+            getPayload: () => ({ sub: "sub1" }), // Missing email
+          }),
+        };
+      });
 
       await expect(
         userService.linkGoogleIdentity({

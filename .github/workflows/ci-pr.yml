@@ -90,3 +90,18 @@ jobs:
           for file in "${files[@]}"; do
             k6 inspect "$file" >/dev/null
           done
+
+  sdk-example-bff-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm verify:example-bff-e2e

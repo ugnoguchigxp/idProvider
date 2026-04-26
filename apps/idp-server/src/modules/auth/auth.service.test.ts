@@ -6,9 +6,11 @@ import { AuthService } from "./auth.service.js";
 const mockVerifyIdToken = vi.fn();
 vi.mock("google-auth-library", () => {
   return {
-    OAuth2Client: vi.fn().mockImplementation(() => ({
-      verifyIdToken: mockVerifyIdToken,
-    })),
+    OAuth2Client: vi.fn(function MockOAuth2Client() {
+      return {
+        verifyIdToken: mockVerifyIdToken,
+      };
+    }),
   };
 });
 
