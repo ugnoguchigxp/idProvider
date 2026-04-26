@@ -24,6 +24,9 @@ describe("Config Routes Integration", () => {
         updateNotificationConfig: vi.fn(),
         updateEmailTemplateConfig: vi.fn(),
       },
+      auditRepository: {
+        createSecurityEvent: vi.fn(),
+      },
       env: { NODE_ENV: "test" },
       logger: { info: vi.fn(), error: vi.fn() },
     };
@@ -54,5 +57,30 @@ describe("Config Routes Integration", () => {
       headers: { Authorization: "Bearer at_mock_token_long_enough_16" },
     });
     expect(res.status).toBe(403);
+  });
+
+  it("PUT /v1/admin/configs/notifications should emit security event", async () => {
+    deps.rbacService.authorizationCheck.mockResolvedValue({ allowed: true });
+    const res = await app.request("/v1/admin/configs/notifications", {
+      method: "PUT",
+      headers: {
+        Authorization: "Bearer at_mock_token_long_enough_16",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        notificationRecipients: ["admin@example.com"],
+        alertLevels: ["Critical"],
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(deps.auditRepository.createSecurityEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "admin.config.updated",
+        userId: "user-1",
+        payload: {
+          key: "notifications",
+        },
+      }),
+    );
   });
 });

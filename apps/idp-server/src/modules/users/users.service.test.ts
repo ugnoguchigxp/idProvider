@@ -43,6 +43,7 @@ describe("UserService", () => {
       },
       auditRepository: {
         createAuditLog: vi.fn(),
+        createSecurityEvent: vi.fn(),
       },
       logger: {
         info: vi.fn(),
@@ -236,6 +237,14 @@ describe("UserService", () => {
         providerSubject: "google-sub-1",
         email: "test@example.com",
       });
+      expect(deps.auditRepository.createSecurityEvent).toHaveBeenCalledWith({
+        eventType: "identity.google.linked",
+        userId: "u1",
+        payload: {
+          providerSubject: "google-sub-1",
+          email: "test@example.com",
+        },
+      });
     });
   });
 
@@ -247,6 +256,13 @@ describe("UserService", () => {
         "sub-1",
       );
       expect(result.ok).toBe(true);
+      expect(deps.auditRepository.createSecurityEvent).toHaveBeenCalledWith({
+        eventType: "identity.google.unlinked",
+        userId: "u1",
+        payload: {
+          providerSubject: "sub-1",
+        },
+      });
     });
   });
 

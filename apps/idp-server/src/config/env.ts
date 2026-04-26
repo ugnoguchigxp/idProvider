@@ -31,6 +31,8 @@ const envSchema = z
     ARGON2_PARALLELISM: z.coerce.number().int().min(1).default(1),
     RATE_LIMIT_SIGNUP_PER_MIN: z.coerce.number().int().min(1).default(10),
     RATE_LIMIT_LOGIN_PER_MIN: z.coerce.number().int().min(1).default(20),
+    RATE_LIMIT_OAUTH_PER_MIN: z.coerce.number().int().min(1).default(60),
+    RATE_LIMIT_DISCOVERY_PER_MIN: z.coerce.number().int().min(1).default(120),
     MFA_ISSUER: z.string().min(1).default("gxp-idProvider"),
     JWKS_ROTATION_INTERVAL_HOURS: z.coerce
       .number()

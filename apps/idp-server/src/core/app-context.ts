@@ -6,6 +6,7 @@ import type {
 } from "@idp/auth-core";
 import type pino from "pino";
 import type { AppEnv } from "../config/env.js";
+import type { AuditRepository } from "../modules/audit/audit.repository.js";
 import type { AuthService } from "../modules/auth/auth.service.js";
 import type { MfaService } from "../modules/mfa/mfa.service.js";
 import type { MfaRecoveryService } from "../modules/mfa/mfa-recovery.service.js";
@@ -26,6 +27,7 @@ export type AppDependencies = {
   rbacService: RBACService;
   webauthnService: WebAuthnService;
   configService: ConfigService;
+  auditRepository: AuditRepository;
   keyStore: KeyStoreService;
   redis: RedisClient;
   logger: pino.Logger;

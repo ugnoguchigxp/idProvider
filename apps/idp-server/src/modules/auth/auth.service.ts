@@ -35,6 +35,25 @@ export type AuthServiceDependencies = {
 export class AuthService {
   constructor(private deps: AuthServiceDependencies) {}
 
+  private async createSecurityEvent(
+    eventType: string,
+    userId: string | null,
+    payload: Record<string, unknown> = {},
+  ) {
+    try {
+      await this.deps.auditRepository.createSecurityEvent({
+        eventType,
+        userId,
+        payload,
+      });
+    } catch (error: unknown) {
+      this.deps.logger.error(
+        { eventType, userId, error },
+        "failed to persist security event",
+      );
+    }
+  }
+
   private async enforceMfaForLogin(
     userId: string,
     ipAddress: string | null,
@@ -138,6 +157,11 @@ export class AuthService {
       : false;
     if (!user || !isValidPassword) {
       await this.deps.authRepository.recordAttempt(email, false, ipAddress);
+      await this.createSecurityEvent("login.failed", null, {
+        email,
+        ipAddress,
+        reason: "invalid_credentials",
+      });
       throw new ApiError(
         401,
         "invalid_credentials",
@@ -148,7 +172,17 @@ export class AuthService {
     await this.deps.authRepository.recordAttempt(email, true, ipAddress);
 
     if (user.status !== "active") {
-      throw new ApiError(401, "unauthorized", "Account is not active");
+      await this.createSecurityEvent("login.failed", user.id, {
+        email,
+        ipAddress,
+        reason: "inactive_user",
+        status: user.status,
+      });
+      throw new ApiError(
+        401,
+        "invalid_credentials",
+        "Invalid email or password",
+      );
     }
 
     const mfaEnabled = await this.deps.mfaService.hasEnabledMfa(user.id);
@@ -160,6 +194,11 @@ export class AuthService {
     }
 
     const session = await this.createSession(user.id, ipAddress, userAgent);
+    await this.createSecurityEvent("login.success", user.id, {
+      email,
+      ipAddress,
+      mfaEnabled,
+    });
     return ok({
       status: "ok",
       userId: user.id,
@@ -176,6 +215,9 @@ export class AuthService {
     const session =
       await this.deps.sessionRepository.findByRefreshTokenHash(tokenHash);
     if (!session) {
+      await this.createSecurityEvent("refresh_token.reuse_detected", null, {
+        reason: "token_not_found",
+      });
       throw new ApiError(
         401,
         "invalid_token",
@@ -208,6 +250,13 @@ export class AuthService {
     );
     if (!rotated) {
       await this.deps.sessionRepository.revoke(session.id);
+      await this.createSecurityEvent(
+        "refresh_token.reuse_detected",
+        session.userId,
+        {
+          sessionId: session.id,
+        },
+      );
       throw new ApiError(401, "invalid_token", "Refresh token reuse detected");
     }
 
@@ -454,7 +503,11 @@ export class AuthService {
       const existingUser = await this.deps.userRepository.findByEmail(email);
       if (existingUser) {
         if (existingUser.status !== "active") {
-          throw new ApiError(401, "unauthorized", "Account is not active");
+          throw new ApiError(
+            401,
+            "invalid_credentials",
+            "Invalid authentication request",
+          );
         }
         userId = existingUser.id;
       } else {
@@ -476,7 +529,11 @@ export class AuthService {
 
     const user = await this.deps.userRepository.findById(userId);
     if (!user || user.status !== "active") {
-      throw new ApiError(401, "unauthorized", "Account is not active");
+      throw new ApiError(
+        401,
+        "invalid_credentials",
+        "Invalid authentication request",
+      );
     }
 
     const hasLocalPassword = Boolean(
@@ -502,6 +559,12 @@ export class AuthService {
       input.ipAddress,
       input.userAgent,
     );
+    await this.createSecurityEvent("login.success", userId, {
+      provider: "google",
+      email,
+      ipAddress: input.ipAddress,
+      mfaEnabled,
+    });
     return ok({
       status: "ok",
       userId,

@@ -152,10 +152,16 @@ export class RBACRepository extends BaseRepository {
     tx?: DbTransaction | DbClient,
   ): Promise<string[]> {
     const db = tx ?? this.db;
+    const now = new Date();
     const result = await db
       .select({ key: entitlements.key })
       .from(entitlements)
-      .where(eq(entitlements.enabled, true));
+      .where(
+        and(
+          eq(entitlements.enabled, true),
+          or(isNull(entitlements.expiresAt), gt(entitlements.expiresAt, now)),
+        ),
+      );
     return [...new Set(result.map((r) => r.key))];
   }
 }

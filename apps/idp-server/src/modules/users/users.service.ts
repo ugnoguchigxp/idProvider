@@ -236,6 +236,15 @@ export class UserService {
       });
     }
 
+    await this.deps.auditRepository.createSecurityEvent({
+      eventType: "identity.google.linked",
+      userId: params.userId,
+      payload: {
+        providerSubject: payload.sub,
+        email,
+      },
+    });
+
     return ok({ status: "linked" });
   }
 
@@ -245,6 +254,13 @@ export class UserService {
     subject: string,
   ) {
     await this.deps.identityRepository.delete(userId, provider, subject);
+    await this.deps.auditRepository.createSecurityEvent({
+      eventType: `identity.${provider}.unlinked`,
+      userId,
+      payload: {
+        providerSubject: subject,
+      },
+    });
     return ok({ status: "unlinked" });
   }
 }

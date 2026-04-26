@@ -1,6 +1,7 @@
 import type { AppEnv } from "../config/env.js";
 import type { AppDependencies } from "../core/app-context.js";
 import type { AppInfrastructure } from "./create-infrastructure.js";
+import type { AppRepositories } from "./create-repositories.js";
 import type { AppServices } from "./create-services.js";
 
 export type CreateAppDependenciesInput = {
@@ -9,12 +10,14 @@ export type CreateAppDependenciesInput = {
     AppInfrastructure,
     "configService" | "keyStore" | "redis" | "logger" | "rateLimiter"
   >;
+  repositories: Pick<AppRepositories, "auditRepository">;
   services: AppServices;
 };
 
 export const createAppDependencies = ({
   env,
   infrastructure,
+  repositories,
   services,
 }: CreateAppDependenciesInput): AppDependencies => ({
   env,
@@ -27,6 +30,7 @@ export const createAppDependencies = ({
   rbacService: services.rbacService,
   webauthnService: services.webauthnService,
   configService: infrastructure.configService,
+  auditRepository: repositories.auditRepository,
   keyStore: infrastructure.keyStore,
   redis: infrastructure.redis,
   logger: infrastructure.logger,

@@ -188,6 +188,19 @@ export const createAuthRoutes = (deps: AuthRoutesDependencies) => {
     publicEndpointAdapter({
       schema: refreshRequestSchema,
       handler: async (c, payload) => {
+        const ipAddress = getIpAddress(c.req.header("x-forwarded-for"));
+        const rate = await deps.rateLimiter.consume(
+          `oauth-token:${ipAddress ?? "unknown"}`,
+          deps.env.RATE_LIMIT_OAUTH_PER_MIN,
+          60,
+        );
+        if (!rate.allowed) {
+          throw new ApiError(
+            429,
+            "rate_limited",
+            "Too many OAuth token requests",
+          );
+        }
         assertOAuthClientAuth(c.req.header("authorization"), {
           clientId: deps.env.OAUTH_CLIENT_ID,
           clientSecret: deps.env.OAUTH_CLIENT_SECRET,
@@ -216,6 +229,19 @@ export const createAuthRoutes = (deps: AuthRoutesDependencies) => {
     publicEndpointAdapter({
       schema: oauthIntrospectionRequestSchema,
       handler: async (c, payload) => {
+        const ipAddress = getIpAddress(c.req.header("x-forwarded-for"));
+        const rate = await deps.rateLimiter.consume(
+          `oauth-introspection:${ipAddress ?? "unknown"}`,
+          deps.env.RATE_LIMIT_OAUTH_PER_MIN,
+          60,
+        );
+        if (!rate.allowed) {
+          throw new ApiError(
+            429,
+            "rate_limited",
+            "Too many OAuth introspection requests",
+          );
+        }
         assertOAuthClientAuth(c.req.header("authorization"), {
           clientId: deps.env.OAUTH_CLIENT_ID,
           clientSecret: deps.env.OAUTH_CLIENT_SECRET,

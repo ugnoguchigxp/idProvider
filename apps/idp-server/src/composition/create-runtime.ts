@@ -33,6 +33,7 @@ export const createRuntime = (env: AppEnv): AppRuntime => {
   const appDependencies = createAppDependencies({
     env,
     infrastructure,
+    repositories,
     services,
   });
 

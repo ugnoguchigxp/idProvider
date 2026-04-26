@@ -8,6 +8,7 @@ import {
 } from "@idp/shared";
 import { Hono } from "hono";
 import { authenticatedEndpointAdapter } from "../../adapters/authenticated-endpoint-adapter.js";
+import type { AuditRepository } from "../audit/audit.repository.js";
 import type { AuthService } from "../auth/auth.service.js";
 import type { RBACService } from "../rbac/rbac.service.js";
 
@@ -15,6 +16,7 @@ export type AdminRoutesDependencies = {
   authService: AuthService;
   rbacService: RBACService;
   configService: ConfigService;
+  auditRepository: AuditRepository;
 };
 
 const assertAdmin = async (deps: AdminRoutesDependencies, userId: string) => {
@@ -69,6 +71,13 @@ export const createConfigRoutes = (deps: AdminRoutesDependencies) => {
       handler: async (_c, payload, auth) => {
         await assertAdmin(deps, auth.userId);
         await deps.configService.updateSocialLoginConfig("google", payload);
+        await deps.auditRepository.createSecurityEvent({
+          eventType: "admin.config.updated",
+          userId: auth.userId,
+          payload: {
+            key: "social_login.google",
+          },
+        });
         return { status: "ok" };
       },
     }),
@@ -82,6 +91,13 @@ export const createConfigRoutes = (deps: AdminRoutesDependencies) => {
       handler: async (_c, payload, auth) => {
         await assertAdmin(deps, auth.userId);
         await deps.configService.updateNotificationConfig(payload);
+        await deps.auditRepository.createSecurityEvent({
+          eventType: "admin.config.updated",
+          userId: auth.userId,
+          payload: {
+            key: "notifications",
+          },
+        });
         return { status: "ok" };
       },
     }),
@@ -101,6 +117,13 @@ export const createConfigRoutes = (deps: AdminRoutesDependencies) => {
             body: payload.body,
           },
         );
+        await deps.auditRepository.createSecurityEvent({
+          eventType: "admin.config.updated",
+          userId: auth.userId,
+          payload: {
+            key: `email_templates.${payload.templateKey}`,
+          },
+        });
         return { status: "ok" };
       },
     }),

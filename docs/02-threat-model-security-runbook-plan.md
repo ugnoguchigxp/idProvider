@@ -2,6 +2,18 @@
 
 最終更新: 2026-04-26
 
+## 0. 実装状況（2026-04-26）
+- [x] `docs/threat-model.md` 作成
+- [x] `docs/security-runbook.md` 作成
+- [x] `docs/incident-response-checklist.md` 作成
+- [x] `docs/security-event-catalog.md` 作成
+- [x] `docs/risk-register.md` 作成
+- [x] `login.success` / `login.failed` の security event 実装
+- [x] `refresh_token.reuse_detected` の security event 実装
+- [x] `identity.google.linked` / `identity.google.unlinked` の security event 実装
+- [x] `admin.config.updated` の security event 実装
+- [x] `pnpm verify` 通過
+
 ## 1. 目的
 自前IdPを本番運用する前提で、以下を監査説明可能な形にする。
 

@@ -51,7 +51,10 @@ describe("AuthService", () => {
           .fn()
           .mockResolvedValue({ permissions: [], entitlements: {} }),
       },
-      auditRepository: { createAuditLog: vi.fn() },
+      auditRepository: {
+        createAuditLog: vi.fn(),
+        createSecurityEvent: vi.fn(),
+      },
       mfaService: {
         hasEnabledMfa: vi.fn().mockResolvedValue(false),
         verifyMfa: vi.fn(),
@@ -104,6 +107,12 @@ describe("AuthService", () => {
       });
       const result = await service.login("a@b.com", "pass", "127.0.0.1", "UA");
       expect(result.ok).toBe(true);
+      expect(deps.auditRepository.createSecurityEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: "login.success",
+          userId: "u1",
+        }),
+      );
     });
 
     it("should require MFA when enabled and no method is provided", async () => {
@@ -161,6 +170,12 @@ describe("AuthService", () => {
       await expect(
         service.login("a@b.com", "pass", "127.0.0.1", "UA"),
       ).rejects.toThrow(ApiError);
+      expect(deps.auditRepository.createSecurityEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: "login.failed",
+          userId: null,
+        }),
+      );
     });
   });
 
@@ -193,6 +208,7 @@ describe("AuthService", () => {
     it("should rotate refresh token and persist new token hashes", async () => {
       deps.sessionRepository.findByRefreshTokenHash.mockResolvedValue({
         id: "s1",
+        userId: "u1",
         userStatus: "active",
       });
       deps.sessionRepository.rotateTokens.mockResolvedValue(true);
@@ -215,12 +231,19 @@ describe("AuthService", () => {
     it("should revoke the session if refresh rotation fails", async () => {
       deps.sessionRepository.findByRefreshTokenHash.mockResolvedValue({
         id: "s1",
+        userId: "u1",
         userStatus: "active",
       });
       deps.sessionRepository.rotateTokens.mockResolvedValue(false);
 
       await expect(service.refresh("refresh-token")).rejects.toThrow(ApiError);
       expect(deps.sessionRepository.revoke).toHaveBeenCalledWith("s1");
+      expect(deps.auditRepository.createSecurityEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: "refresh_token.reuse_detected",
+          userId: "u1",
+        }),
+      );
     });
   });
 

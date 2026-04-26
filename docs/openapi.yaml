@@ -1024,6 +1024,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /v1/token/refresh:
     post:
@@ -1877,6 +1883,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /.well-known/jwks.json:
     get:
@@ -1898,6 +1910,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '400':
           description: Invalid JWKS request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
           content:
             application/json:
               schema:
@@ -1929,6 +1947,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /oauth/introspection:
     post:
@@ -1954,6 +1978,12 @@ paths:
                   - $ref: '#/components/schemas/OAuthIntrospectionActiveResponse'
         '401':
           description: Invalid client
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
           content:
             application/json:
               schema:
