@@ -410,4 +410,41 @@ describe("OpenAPI contract: protected and admin", () => {
       path: "/v1/admin/oauth/clients/{clientId}/rotate-secret",
     });
   });
+
+  it("GET /v1/admin/keys 200", async () => {
+    const res = await app.request("/v1/admin/keys", {
+      headers: authHeader,
+    });
+    expect(res.status).toBe(200);
+    await assertJsonResponseMatchesOpenApi(res, {
+      method: "get",
+      path: "/v1/admin/keys",
+    });
+  });
+
+  it("POST /v1/admin/keys/rotate 200", async () => {
+    const res = await app.request("/v1/admin/keys/rotate", {
+      method: "POST",
+      headers: { ...authHeader, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    await assertJsonResponseMatchesOpenApi(res, {
+      method: "post",
+      path: "/v1/admin/keys/rotate",
+    });
+  });
+
+  it("POST /v1/admin/keys/rotate-emergency 200", async () => {
+    const res = await app.request("/v1/admin/keys/rotate-emergency", {
+      method: "POST",
+      headers: { ...authHeader, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    await assertJsonResponseMatchesOpenApi(res, {
+      method: "post",
+      path: "/v1/admin/keys/rotate-emergency",
+    });
+  });
 });

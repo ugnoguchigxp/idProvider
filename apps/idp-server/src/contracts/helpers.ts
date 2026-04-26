@@ -173,6 +173,30 @@ export const createContractDeps = () => ({
   },
   keyStore: {
     getPublicJwks: vi.fn().mockResolvedValue({ keys: [] }),
+    listKeys: vi.fn().mockResolvedValue([
+      {
+        kid: "k1",
+        alg: "RS256",
+        state: "active",
+        createdAt: new Date().toISOString(),
+        expiresAt: null,
+        revokedAt: null,
+        rotationReason: "scheduled",
+        rotatedFromKid: null,
+      },
+    ]),
+    rotateManual: vi.fn().mockResolvedValue({
+      rotated: true,
+      activeKid: "k2",
+      previousKid: "k1",
+      reason: "manual",
+    }),
+    rotateEmergency: vi.fn().mockResolvedValue({
+      rotated: true,
+      activeKid: "k3",
+      previousKid: "k2",
+      reason: "emergency",
+    }),
   },
   configService: {
     getSocialLoginConfig: vi.fn().mockResolvedValue({
@@ -191,6 +215,9 @@ export const createContractDeps = () => ({
     updateSocialLoginConfig: vi.fn(),
     updateNotificationConfig: vi.fn(),
     updateEmailTemplateConfig: vi.fn(),
+  },
+  auditRepository: {
+    createSecurityEvent: vi.fn().mockResolvedValue(undefined),
   },
   redis: {
     quit: vi.fn(),

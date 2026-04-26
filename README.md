@@ -194,6 +194,9 @@ pnpm dev
   - `POST /v1/admin/oauth/clients/{clientId}/rotate-secret`
   - `POST /v1/admin/oauth/clients/{clientId}/disable`
   - `POST /v1/admin/oauth/clients/{clientId}/enable`
+  - `GET /v1/admin/keys`
+  - `POST /v1/admin/keys/rotate`
+  - `POST /v1/admin/keys/rotate-emergency`
 
 ## 管理 UI の使い方
 

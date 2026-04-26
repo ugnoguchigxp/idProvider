@@ -6,6 +6,7 @@ import { handleError } from "./middleware/error-handler.js";
 import { traceMiddleware } from "./middleware/trace.js";
 import { createAuthRoutes } from "./modules/auth/auth.routes.js";
 import { createConfigRoutes } from "./modules/config/config.routes.js";
+import { createKeyManagementRoutes } from "./modules/keys/keys.routes.js";
 import { createMfaRoutes } from "./modules/mfa/mfa.routes.js";
 import { createOAuthClientRoutes } from "./modules/oauth-clients/oauth-client.routes.js";
 import { createRbacRoutes } from "./modules/rbac/rbac.routes.js";
@@ -27,6 +28,7 @@ export const buildApp = (deps: AppDependencies) => {
   app.route("/", createRbacRoutes(deps));
   app.route("/", createConfigRoutes(deps));
   app.route("/", createOAuthClientRoutes(deps));
+  app.route("/", createKeyManagementRoutes(deps));
 
   app.get("/healthz", (c) => c.json({ ok: true }));
   app.get("/readyz", (c) => c.json({ ready: true }));

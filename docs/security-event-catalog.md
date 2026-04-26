@@ -25,6 +25,10 @@
 | `identity.google.linked` | Implemented | High | Google link成功 | RB-IDENTITY-MISLINK | 自身アカウント連携時に記録 |
 | `identity.google.unlinked` | Implemented | Medium | Google unlink成功 | RB-IDENTITY-MISLINK | provider別に記録 |
 | `admin.config.updated` | Implemented | Critical | admin設定変更 | RB-ADMIN-CONFIG | social/notification/template更新 |
+| `key.rotation.scheduled` | Implemented | High | 起動時の定期ローテーション実行 | RB-KEY-COMPROMISE | due時のみ発火 |
+| `key.rotation.manual` | Implemented | Critical | 管理者手動ローテーション実行 | RB-KEY-COMPROMISE | 新旧kidをpayloadへ記録 |
+| `key.rotation.emergency` | Implemented | Critical | 緊急ローテーション実行 | RB-KEY-COMPROMISE | 旧鍵の即時失効を伴う |
+| `key.revoked` | Implemented | Critical | 緊急ローテーションで旧鍵失効 | RB-KEY-COMPROMISE | revoke対象kidを記録 |
 
 ## 4. アラート方針
 - Critical: 即時ページング（オンコール）
@@ -42,7 +46,11 @@ where created_at >= now() - interval '1 hour'
     'mfa.recovery_codes.low',
     'account.deletion.requested',
     'refresh_token.reuse_detected',
-    'admin.config.updated'
+    'admin.config.updated',
+    'key.rotation.scheduled',
+    'key.rotation.manual',
+    'key.rotation.emergency',
+    'key.revoked'
   )
 group by event_type
 order by c desc;

@@ -432,10 +432,15 @@ export const signingKeys = pgTable("signing_keys", {
   publicKeyPem: text("public_key_pem").notNull(),
   isActive: boolean("is_active").notNull().default(true),
   rotatedFromKid: varchar("rotated_from_kid", { length: 128 }),
+  rotationReason: varchar("rotation_reason", { length: 64 }),
+  rotatedBy: uuid("rotated_by").references(() => users.id, {
+    onDelete: "set null",
+  }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
   expiresAt: timestamp("expires_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
 });
 
 export const legalHolds = pgTable(

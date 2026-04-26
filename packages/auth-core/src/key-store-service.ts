@@ -28,6 +28,8 @@ export type KeyStoreOptions = {
   gracePeriodHours: number;
 };
 
+type RotationReason = "bootstrap" | "scheduled" | "manual" | "emergency";
+
 const nowPlusHours = (hours: number): Date =>
   new Date(Date.now() + hours * 60 * 60 * 1000);
 
@@ -83,7 +85,13 @@ export class KeyStoreService {
         createdAt: signingKeys.createdAt,
       })
       .from(signingKeys)
-      .where(and(eq(signingKeys.isActive, true), isNull(signingKeys.expiresAt)))
+      .where(
+        and(
+          eq(signingKeys.isActive, true),
+          isNull(signingKeys.expiresAt),
+          isNull(signingKeys.revokedAt),
+        ),
+      )
       .orderBy(desc(signingKeys.createdAt))
       .limit(1);
 
@@ -105,6 +113,7 @@ export class KeyStoreService {
       privateKeyPem: keyPair.privateKeyPem,
       publicKeyPem: keyPair.publicKeyPem,
       isActive: true,
+      rotationReason: "bootstrap",
     });
 
     const created = await this.getCurrentActiveKey();
@@ -115,29 +124,40 @@ export class KeyStoreService {
     return created;
   }
 
-  async rotateIfDue() {
+  private async rotateNow(
+    reason: Exclude<RotationReason, "bootstrap">,
+    actorUserId?: string,
+  ) {
     const active = await this.ensureKeyExists();
-    const dueAt = new Date(
-      active.createdAt.getTime() +
-        this.options.rotationIntervalHours * 60 * 60 * 1000,
-    );
-
-    if (Date.now() < dueAt.getTime()) {
-      return { rotated: false as const, activeKid: active.kid };
-    }
-
     const next = createRsaKeyPair();
     const nextKid = randomUUID();
 
     const rotated = await withTransaction(this.db, async (tx) => {
+      const deactivateSet =
+        reason === "emergency"
+          ? {
+              isActive: false,
+              expiresAt: new Date(),
+              revokedAt: new Date(),
+              rotationReason: reason,
+              rotatedBy: actorUserId ?? null,
+            }
+          : {
+              isActive: false,
+              expiresAt: nowPlusHours(this.options.gracePeriodHours),
+              rotationReason: reason,
+              rotatedBy: actorUserId ?? null,
+            };
+
       const updated = await tx
         .update(signingKeys)
-        .set({
-          isActive: false,
-          expiresAt: nowPlusHours(this.options.gracePeriodHours),
-        })
+        .set(deactivateSet)
         .where(
-          and(eq(signingKeys.kid, active.kid), eq(signingKeys.isActive, true)),
+          and(
+            eq(signingKeys.kid, active.kid),
+            eq(signingKeys.isActive, true),
+            isNull(signingKeys.revokedAt),
+          ),
         )
         .returning({ kid: signingKeys.kid });
 
@@ -152,21 +172,84 @@ export class KeyStoreService {
         publicKeyPem: next.publicKeyPem,
         isActive: true,
         rotatedFromKid: active.kid,
+        rotationReason: reason,
+        rotatedBy: actorUserId ?? null,
       });
 
       return {
         rotated: true as const,
         activeKid: nextKid,
         previousKid: active.kid,
+        reason,
       };
     });
 
     if (!rotated) {
       const latest = await this.ensureKeyExists();
-      return { rotated: false as const, activeKid: latest.kid };
+      return {
+        rotated: false as const,
+        activeKid: latest.kid,
+        reason,
+      };
     }
 
     return rotated;
+  }
+
+  async rotateIfDue() {
+    const active = await this.ensureKeyExists();
+    const dueAt = new Date(
+      active.createdAt.getTime() +
+        this.options.rotationIntervalHours * 60 * 60 * 1000,
+    );
+
+    if (Date.now() < dueAt.getTime()) {
+      return {
+        rotated: false as const,
+        activeKid: active.kid,
+        reason: "scheduled" as const,
+      };
+    }
+
+    return this.rotateNow("scheduled");
+  }
+
+  async rotateManual(actorUserId?: string) {
+    return this.rotateNow("manual", actorUserId);
+  }
+
+  async rotateEmergency(actorUserId?: string) {
+    return this.rotateNow("emergency", actorUserId);
+  }
+
+  async listKeys() {
+    const rows = await this.db
+      .select({
+        kid: signingKeys.kid,
+        alg: signingKeys.alg,
+        isActive: signingKeys.isActive,
+        rotatedFromKid: signingKeys.rotatedFromKid,
+        rotationReason: signingKeys.rotationReason,
+        createdAt: signingKeys.createdAt,
+        expiresAt: signingKeys.expiresAt,
+        revokedAt: signingKeys.revokedAt,
+      })
+      .from(signingKeys)
+      .orderBy(desc(signingKeys.createdAt));
+
+    return rows.map((row) => {
+      let state: "active" | "grace" | "revoked" = "grace";
+      if (row.revokedAt) {
+        state = "revoked";
+      } else if (row.isActive) {
+        state = "active";
+      }
+
+      return {
+        ...row,
+        state,
+      };
+    });
   }
 
   async getPublicJwks(): Promise<JsonWebKeySet> {
@@ -180,9 +263,12 @@ export class KeyStoreService {
       })
       .from(signingKeys)
       .where(
-        or(
-          eq(signingKeys.isActive, true),
-          gt(signingKeys.expiresAt, new Date()),
+        and(
+          isNull(signingKeys.revokedAt),
+          or(
+            eq(signingKeys.isActive, true),
+            gt(signingKeys.expiresAt, new Date()),
+          ),
         ),
       )
       .orderBy(desc(signingKeys.isActive), asc(signingKeys.createdAt));

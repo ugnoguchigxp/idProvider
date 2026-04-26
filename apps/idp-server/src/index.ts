@@ -8,9 +8,27 @@ import { createOidcProvider } from "./core/oidc-provider.js";
 const bootstrap = async () => {
   const env = loadEnv(process.env);
   const runtime = createRuntime(env);
-  const { logger, keyStore, redis, pool, services, appDependencies } = runtime;
+  const {
+    logger,
+    keyStore,
+    redis,
+    pool,
+    services,
+    appDependencies,
+    repositories,
+  } = runtime;
 
-  await keyStore.rotateIfDue();
+  const rotation = await keyStore.rotateIfDue();
+  if (rotation.rotated) {
+    await repositories.auditRepository.createSecurityEvent({
+      eventType: "key.rotation.scheduled",
+      userId: null,
+      payload: {
+        activeKid: rotation.activeKid,
+        previousKid: "previousKid" in rotation ? rotation.previousKid : null,
+      },
+    });
+  }
 
   const app = buildApp(appDependencies);
 
