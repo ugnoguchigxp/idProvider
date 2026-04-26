@@ -4,6 +4,7 @@ import { publicEndpointAdapter } from "./adapters/public-endpoint-adapter.js";
 import type { AppDependencies } from "./core/app-context.js";
 import { handleError } from "./middleware/error-handler.js";
 import { traceMiddleware } from "./middleware/trace.js";
+import { createAuditRoutes } from "./modules/audit/audit.routes.js";
 import { createAuthRoutes } from "./modules/auth/auth.routes.js";
 import { createConfigRoutes } from "./modules/config/config.routes.js";
 import { createKeyManagementRoutes } from "./modules/keys/keys.routes.js";
@@ -29,6 +30,7 @@ export const buildApp = (deps: AppDependencies) => {
   app.route("/", createConfigRoutes(deps));
   app.route("/", createOAuthClientRoutes(deps));
   app.route("/", createKeyManagementRoutes(deps));
+  app.route("/", createAuditRoutes(deps));
 
   app.get("/healthz", (c) => c.json({ ok: true }));
   app.get("/readyz", (c) => c.json({ ready: true }));

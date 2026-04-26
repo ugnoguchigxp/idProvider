@@ -11,7 +11,7 @@
 | R-005 | Account enumeration（応答差分） | login/reset/verify | 3 | 4 | 12 | P2 | Backend A | 2026-05-08 | Closed | 閾値未満探索 |
 | R-006 | WebAuthn challenge replay対策検証不足 | `/v1/mfa/webauthn/*` | 2 | 5 | 10 | P2 | Backend B | 2026-05-08 | Closed | 実装依存の残余 |
 | R-007 | RBAC/entitlement更新遅延による権限過剰 | `/v1/authorization/check`, `/v1/entitlements/check` | 2 | 4 | 8 | P2 | Backend Lead | 2026-05-09 | Closed | キャッシュ/整合性遅延 |
-| R-008 | 監査ログ改ざん検知未導入 | `audit_logs`, `security_events` | 2 | 5 | 10 | P2 | Security Lead | 2026-05-10 | Accepted | 外部不変ストア未導入のため完全検知は不可 |
+| R-008 | 監査ログ改ざん検知未導入 | `audit_logs`, `security_events` | 2 | 5 | 10 | P2 | Security Lead | 2026-05-10 | Mitigated | hash chain検知導入済み。外部不変ストア未導入の残余は継続 |
 | R-009 | OIDC/OAuth endpoint DoS耐性不足 | discovery/jwks/token | 3 | 3 | 9 | P2 | SRE | 2026-05-10 | Closed | 大規模分散DoSはインフラ対策依存 |
 | R-010 | Incident手順が属人化 | 全体 | 3 | 3 | 9 | P2 | SRE | 2026-05-08 | Closed | 定期訓練を継続要 |
 

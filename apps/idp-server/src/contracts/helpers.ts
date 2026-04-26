@@ -218,6 +218,44 @@ export const createContractDeps = () => ({
   },
   auditRepository: {
     createSecurityEvent: vi.fn().mockResolvedValue(undefined),
+    createAuditLog: vi.fn().mockResolvedValue(undefined),
+    listAuditLogs: vi.fn().mockResolvedValue({
+      items: [
+        {
+          id: "00000000-0000-0000-0000-000000000001",
+          actorUserId: "u1",
+          action: "admin.config.updated",
+          resourceType: "config",
+          resourceId: "social_login.google",
+          payload: { key: "social_login.google" },
+          prevHash: null,
+          entryHash: "abc",
+          integrityVersion: 1,
+          createdAt: new Date(),
+        },
+      ],
+      nextCursor: null,
+    }),
+    listSecurityEvents: vi.fn().mockResolvedValue({
+      items: [
+        {
+          id: "00000000-0000-0000-0000-000000000002",
+          userId: "u1",
+          eventType: "login.success",
+          payload: { method: "password" },
+          createdAt: new Date(),
+        },
+      ],
+      nextCursor: null,
+    }),
+    verifyIntegrityRange: vi.fn().mockResolvedValue({
+      ok: true,
+      checked: 1,
+      firstId: "00000000-0000-0000-0000-000000000001",
+      lastId: "00000000-0000-0000-0000-000000000001",
+      brokenAt: null,
+      reason: null,
+    }),
   },
   redis: {
     quit: vi.fn(),

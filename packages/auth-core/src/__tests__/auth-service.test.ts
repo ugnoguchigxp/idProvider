@@ -51,7 +51,9 @@ describe("AuthService", () => {
       set: vi.fn().mockReturnThis(),
       orderBy: vi.fn().mockReturnThis(),
       delete: vi.fn().mockReturnThis(),
+      execute: vi.fn().mockResolvedValue([]),
     };
+    db.limit.mockResolvedValue([]);
     service = new AuthService(db);
     vi.spyOn(service, "getAuthorizationSnapshot").mockResolvedValue({
       permissions: [],

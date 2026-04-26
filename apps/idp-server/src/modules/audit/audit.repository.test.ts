@@ -12,7 +12,7 @@ describe("AuditRepository", () => {
   });
 
   describe("createAuditLog", () => {
-    it("should insert an audit log", async () => {
+    it("stores non-admin audit logs without hash-chain metadata", async () => {
       await repository.createAuditLog({
         actorUserId: "u1",
         action: "login",
@@ -20,6 +20,29 @@ describe("AuditRepository", () => {
         payload: { foo: "bar" },
       });
       expect(db.insert).toHaveBeenCalled();
+      expect(db.values).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entryHash: null,
+          prevHash: null,
+          integrityVersion: 0,
+        }),
+      );
+    });
+
+    it("stores admin audit logs with hash-chain metadata", async () => {
+      await repository.createAuditLog({
+        actorUserId: "u1",
+        action: "admin.config.updated",
+        resourceType: "config",
+        payload: { foo: "bar" },
+      });
+      expect(db.insert).toHaveBeenCalled();
+      expect(db.values).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entryHash: expect.any(String),
+          integrityVersion: 1,
+        }),
+      );
     });
   });
 
@@ -31,6 +54,14 @@ describe("AuditRepository", () => {
         payload: { reason: "wrong_code" },
       });
       expect(db.insert).toHaveBeenCalled();
+    });
+  });
+
+  describe("verifyIntegrityRange", () => {
+    it("returns ok when no v1 rows exist", async () => {
+      const result = await repository.verifyIntegrityRange({});
+      expect(result.ok).toBe(true);
+      expect(result.checked).toBe(0);
     });
   });
 });

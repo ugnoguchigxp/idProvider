@@ -29,6 +29,7 @@
 | `key.rotation.manual` | Implemented | Critical | 管理者手動ローテーション実行 | RB-KEY-COMPROMISE | 新旧kidをpayloadへ記録 |
 | `key.rotation.emergency` | Implemented | Critical | 緊急ローテーション実行 | RB-KEY-COMPROMISE | 旧鍵の即時失効を伴う |
 | `key.revoked` | Implemented | Critical | 緊急ローテーションで旧鍵失効 | RB-KEY-COMPROMISE | revoke対象kidを記録 |
+| `audit.export.generated` | Implemented | High | 監査ログエクスポート生成 | RB-AUDIT-INTEGRITY | exportIdとhashをpayloadに記録 |
 
 ## 4. アラート方針
 - Critical: 即時ページング（オンコール）
@@ -50,7 +51,8 @@ where created_at >= now() - interval '1 hour'
     'key.rotation.scheduled',
     'key.rotation.manual',
     'key.rotation.emergency',
-    'key.revoked'
+    'key.revoked',
+    'audit.export.generated'
   )
 group by event_type
 order by c desc;

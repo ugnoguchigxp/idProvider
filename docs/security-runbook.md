@@ -157,6 +157,27 @@ Recovery:
 Exit Criteria:
 - 不正要求ゼロ、誤削除ゼロ
 
+### RB-AUDIT-INTEGRITY: 監査ログ完全性異常
+Trigger:
+- `/v1/admin/audit/integrity` で `ok=false`
+- 監査提出時に manifest hash 不一致
+
+Triage:
+1. 影響期間を固定して再検証（from/toを固定）
+2. `brokenAt` の前後イベントを抽出
+3. retention job 実行タイミングとの相関を確認
+
+Containment:
+1. 監査ログへの書き込み経路変更を一時停止（緊急変更凍結）
+2. 直近エクスポートを再生成しハッシュ再計算
+3. 改ざん疑いがある場合は証跡を別ストレージへ退避
+
+Recovery:
+- 原因（実装不整合/運用誤操作）を特定し修正後に同一期間で再検証
+
+Exit Criteria:
+- 同一期間で `ok=true` を確認し、再発防止Issue登録済み
+
 ## 4. 連絡・エスカレーション
 - 1st responder: On-call engineer
 - 2nd responder: Security Lead

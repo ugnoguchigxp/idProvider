@@ -11,8 +11,7 @@
 - Client Registry: `docs/04-client-registry-plan.md`
 - Key Management / Rotation: `docs/05-key-management-rotation-plan.md`
 - Audit Log完全性: `docs/06-audit-log-integrity-plan.md`
-- Policy Engine: `docs/07-policy-engine-plan.md`
-- Tenant / Organization境界: `docs/08-tenant-organization-boundary-plan.md`
+- B2C認可・境界戦略: `docs/b2c-authorization-and-boundary-strategy.md`
 - Observability / Security Monitoring: `docs/09-observability-security-monitoring-plan.md`
 - Backup / DR / Migration: `docs/10-backup-dr-migration-plan.md`
 

@@ -447,4 +447,53 @@ describe("OpenAPI contract: protected and admin", () => {
       path: "/v1/admin/keys/rotate-emergency",
     });
   });
+
+  it("GET /v1/admin/audit/logs 200", async () => {
+    const res = await app.request("/v1/admin/audit/logs?limit=10", {
+      headers: authHeader,
+    });
+    expect(res.status).toBe(200);
+    await assertJsonResponseMatchesOpenApi(res, {
+      method: "get",
+      path: "/v1/admin/audit/logs",
+    });
+  });
+
+  it("GET /v1/admin/audit/security-events 200", async () => {
+    const res = await app.request("/v1/admin/audit/security-events?limit=10", {
+      headers: authHeader,
+    });
+    expect(res.status).toBe(200);
+    await assertJsonResponseMatchesOpenApi(res, {
+      method: "get",
+      path: "/v1/admin/audit/security-events",
+    });
+  });
+
+  it("GET /v1/admin/audit/integrity 200", async () => {
+    const res = await app.request("/v1/admin/audit/integrity", {
+      headers: authHeader,
+    });
+    expect(res.status).toBe(200);
+    await assertJsonResponseMatchesOpenApi(res, {
+      method: "get",
+      path: "/v1/admin/audit/integrity",
+    });
+  });
+
+  it("POST /v1/admin/audit/exports 200", async () => {
+    const res = await app.request("/v1/admin/audit/exports", {
+      method: "POST",
+      headers: { ...authHeader, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: "both",
+        format: "jsonl",
+      }),
+    });
+    expect(res.status).toBe(200);
+    await assertJsonResponseMatchesOpenApi(res, {
+      method: "post",
+      path: "/v1/admin/audit/exports",
+    });
+  });
 });

@@ -411,19 +411,33 @@ export const securityEvents = pgTable("security_events", {
     .defaultNow(),
 });
 
-export const auditLogs = pgTable("audit_logs", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  actorUserId: uuid("actor_user_id").references(() => users.id, {
-    onDelete: "set null",
+export const auditLogs = pgTable(
+  "audit_logs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    actorUserId: uuid("actor_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    action: varchar("action", { length: 128 }).notNull(),
+    resourceType: varchar("resource_type", { length: 64 }).notNull(),
+    resourceId: varchar("resource_id", { length: 128 }),
+    payload: jsonb("payload").notNull(),
+    prevHash: text("prev_hash"),
+    entryHash: text("entry_hash"),
+    integrityVersion: integer("integrity_version").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    auditLogsCreatedAtIdx: index("audit_logs_created_at_idx").on(
+      table.createdAt,
+    ),
+    auditLogsEntryHashIdx: index("audit_logs_entry_hash_idx").on(
+      table.entryHash,
+    ),
   }),
-  action: varchar("action", { length: 128 }).notNull(),
-  resourceType: varchar("resource_type", { length: 64 }).notNull(),
-  resourceId: varchar("resource_id", { length: 128 }),
-  payload: jsonb("payload").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
+);
 
 export const signingKeys = pgTable("signing_keys", {
   kid: varchar("kid", { length: 128 }).primaryKey(),

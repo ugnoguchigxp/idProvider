@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
   and,
   auditLogs,
@@ -22,6 +22,7 @@ import {
   permissions,
   rolePermissions,
   securityEvents,
+  sql,
   userEmails,
   userPasswords,
   userRoles,
@@ -67,6 +68,32 @@ const hashOpaqueToken = (token: string): string =>
 const createOpaqueToken = (prefix: string): string => {
   const value = randomBytes(48).toString("base64url");
   return `${prefix}_${value}`;
+};
+
+const INTEGRITY_VERSION_NONE = 0;
+const INTEGRITY_VERSION_CHAINED = 1;
+const shouldUseHashChain = (action: string): boolean =>
+  action.startsWith("admin.");
+
+const canonicalize = (value: unknown): string => {
+  if (value === null) return "null";
+  if (typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "number" || typeof value === "boolean") {
+    return JSON.stringify(value);
+  }
+  if (value instanceof Date) return JSON.stringify(value.toISOString());
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalize(item)).join(",")}]`;
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>).sort(
+      ([left], [right]) => left.localeCompare(right),
+    );
+    return `{${entries
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalize(item)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(String(value));
 };
 
 export type AuthenticatedPrincipal = {
@@ -145,12 +172,58 @@ export class AuthService {
     },
     db: DbTransaction | DbClient = this.db,
   ) {
-    await db.insert(auditLogs).values({
+    const id = randomUUID();
+    const createdAt = new Date();
+    const resourceId = input.resourceId ?? null;
+    if (!shouldUseHashChain(input.action)) {
+      await db.insert(auditLogs).values({
+        id,
+        actorUserId: input.actorUserId,
+        action: input.action,
+        resourceType: input.resourceType,
+        resourceId,
+        payload: input.payload,
+        prevHash: null,
+        entryHash: null,
+        integrityVersion: INTEGRITY_VERSION_NONE,
+        createdAt,
+      });
+      return;
+    }
+
+    await db.execute(sql`select pg_advisory_xact_lock(91000202)`);
+    const [latest] = await db
+      .select({
+        entryHash: auditLogs.entryHash,
+      })
+      .from(auditLogs)
+      .where(eq(auditLogs.integrityVersion, INTEGRITY_VERSION_CHAINED))
+      .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
+      .limit(1);
+    const prevHash = latest?.entryHash ?? null;
+    const source = canonicalize({
+      id,
+      createdAt: createdAt.toISOString(),
       actorUserId: input.actorUserId,
       action: input.action,
       resourceType: input.resourceType,
-      resourceId: input.resourceId ?? null,
+      resourceId,
       payload: input.payload,
+      prevHash,
+    });
+    const entryHash = createHash("sha256").update(source).digest("hex");
+
+    await db.insert(auditLogs).values({
+      id,
+      actorUserId: input.actorUserId,
+      action: input.action,
+      resourceType: input.resourceType,
+      resourceId,
+      payload: input.payload,
+      prevHash,
+      entryHash,
+      integrityVersion: INTEGRITY_VERSION_CHAINED,
+      createdAt,
     });
   }
 
