@@ -28,10 +28,43 @@ export type TokenSet = {
   expiresIn: number;
 };
 
+export type RefreshTokenSet = {
+  accessToken: string;
+  idToken?: string;
+  refreshToken?: string;
+  expiresIn: number;
+};
+
 export type VerifiedIdToken = {
   sub: string;
   email?: string;
   emailVerified?: boolean;
+  claims: Record<string, unknown>;
+};
+
+export type SessionIdentity = {
+  userId: string;
+  email?: string;
+  emailVerified?: boolean;
+  permissions: string[];
+  entitlements: Record<string, unknown>;
+  claims: Record<string, unknown>;
+};
+
+export type CompleteAuthorizationCodeCallbackResult = {
+  tokens: TokenSet;
+  idToken: VerifiedIdToken;
+  userInfo?: Record<string, unknown>;
+  sessionIdentity: SessionIdentity;
+};
+
+export type TokenIntrospectionResult = {
+  active: boolean;
+  scope?: string;
+  clientId?: string;
+  sub?: string;
+  exp?: number;
+  iat?: number;
   claims: Record<string, unknown>;
 };
 
@@ -42,6 +75,8 @@ type DiscoveryDocument = {
   jwks_uri: string;
   userinfo_endpoint?: string;
   end_session_endpoint?: string;
+  introspection_endpoint?: string;
+  revocation_endpoint?: string;
 };
 
 type Jwks = {
@@ -90,6 +125,20 @@ const decodeJson = (value: string): Record<string, unknown> => {
 
 const toBasic = (clientId: string, clientSecret: string): string =>
   `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`;
+
+const stringArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is string => typeof item === "string");
+};
+
+const recordValue = (value: unknown): Record<string, unknown> => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return value as Record<string, unknown>;
+};
 
 const withTimeout = async <T>(
   timeoutMs: number,
@@ -161,10 +210,7 @@ export class ServerSdkClient {
     });
     if (
       typeof response.id_token !== "string" ||
-      typeof response.access_token !== "string" ||
-      typeof response.expires_in !== "number" ||
-      !Number.isFinite(response.expires_in) ||
-      response.expires_in <= 0
+      !hasValidAccessTokenResponse(response)
     ) {
       throw new ServerSdkError(
         "oidc_invalid_response",
@@ -181,6 +227,87 @@ export class ServerSdkClient {
       tokenSet.refreshToken = response.refresh_token;
     }
     return tokenSet;
+  }
+
+  async refreshTokens(input: {
+    refreshToken: string;
+    scope?: string[];
+  }): Promise<RefreshTokenSet> {
+    const discovery = await this.getDiscovery();
+    const body: Record<string, string> = {
+      grant_type: "refresh_token",
+      refresh_token: input.refreshToken,
+    };
+    if (input.scope) {
+      body.scope = input.scope.join(" ");
+    }
+    const response = await this.postForm(discovery.token_endpoint, body);
+    if (!hasValidAccessTokenResponse(response)) {
+      throw new ServerSdkError(
+        "oidc_invalid_response",
+        "OIDC refresh response is missing required fields",
+      );
+    }
+
+    const tokenSet: RefreshTokenSet = {
+      accessToken: response.access_token,
+      expiresIn: response.expires_in,
+    };
+    if (typeof response.id_token === "string") {
+      tokenSet.idToken = response.id_token;
+    }
+    if (typeof response.refresh_token === "string") {
+      tokenSet.refreshToken = response.refresh_token;
+    }
+    return tokenSet;
+  }
+
+  async completeAuthorizationCodeCallback(input: {
+    code?: string | null;
+    state?: string | null;
+    expectedState: string;
+    expectedNonce?: string;
+    redirectUri: string;
+    codeVerifier: string;
+    fetchUserInfo?: boolean;
+  }): Promise<CompleteAuthorizationCodeCallbackResult> {
+    if (!input.code) {
+      throw new ServerSdkError(
+        "oidc_invalid_callback",
+        "Authorization callback is missing code",
+      );
+    }
+    if (!input.state || input.state !== input.expectedState) {
+      throw new ServerSdkError(
+        "oidc_invalid_callback",
+        "Authorization callback state mismatch",
+      );
+    }
+
+    const tokens = await this.exchangeCode({
+      code: input.code,
+      redirectUri: input.redirectUri,
+      codeVerifier: input.codeVerifier,
+    });
+    const idToken = await this.verifyIdToken({
+      idToken: tokens.idToken,
+      ...(input.expectedNonce ? { nonce: input.expectedNonce } : {}),
+    });
+    const result: CompleteAuthorizationCodeCallbackResult = {
+      tokens,
+      idToken,
+      sessionIdentity: toSessionIdentity({ idToken }),
+    };
+    if (input.fetchUserInfo) {
+      result.userInfo = await this.getUserInfo({
+        accessToken: tokens.accessToken,
+      });
+      result.sessionIdentity = toSessionIdentity({
+        idToken,
+        userInfo: result.userInfo,
+      });
+    }
+    return result;
   }
 
   async verifyIdToken(input: {
@@ -277,6 +404,58 @@ export class ServerSdkClient {
     return response;
   }
 
+  async introspectToken(input: {
+    token: string;
+    tokenTypeHint?: "access_token" | "refresh_token";
+  }): Promise<TokenIntrospectionResult> {
+    const discovery = await this.getDiscovery();
+    if (!discovery.introspection_endpoint) {
+      throw new ServerSdkError(
+        "oidc_unsupported",
+        "Token introspection is not supported",
+      );
+    }
+
+    const body: Record<string, string> = { token: input.token };
+    if (input.tokenTypeHint) {
+      body.token_type_hint = input.tokenTypeHint;
+    }
+    const response = await this.postForm(
+      discovery.introspection_endpoint,
+      body,
+    );
+    return {
+      active: response.active === true,
+      ...(typeof response.scope === "string" ? { scope: response.scope } : {}),
+      ...(typeof response.client_id === "string"
+        ? { clientId: response.client_id }
+        : {}),
+      ...(typeof response.sub === "string" ? { sub: response.sub } : {}),
+      ...(typeof response.exp === "number" ? { exp: response.exp } : {}),
+      ...(typeof response.iat === "number" ? { iat: response.iat } : {}),
+      claims: response,
+    };
+  }
+
+  async revokeToken(input: {
+    token: string;
+    tokenTypeHint?: "access_token" | "refresh_token";
+  }): Promise<void> {
+    const discovery = await this.getDiscovery();
+    if (!discovery.revocation_endpoint) {
+      throw new ServerSdkError(
+        "oidc_unsupported",
+        "Token revocation is not supported",
+      );
+    }
+
+    const body: Record<string, string> = { token: input.token };
+    if (input.tokenTypeHint) {
+      body.token_type_hint = input.tokenTypeHint;
+    }
+    await this.postFormVoid(discovery.revocation_endpoint, body);
+  }
+
   async createLogoutUrl(input?: {
     postLogoutRedirectUri?: string;
     idTokenHint?: string;
@@ -338,10 +517,35 @@ export class ServerSdkClient {
     });
   }
 
+  private async postFormVoid(
+    url: string,
+    body: Record<string, string>,
+  ): Promise<void> {
+    await this.request(url, {
+      method: "POST",
+      headers: {
+        authorization: toBasic(
+          this.options.clientId,
+          this.options.clientSecret,
+        ),
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams(body).toString(),
+    });
+  }
+
   private async requestJson(
     url: string,
     init: RequestInit = {},
   ): Promise<Record<string, unknown>> {
+    const response = await this.request(url, init);
+    return response.json() as Promise<Record<string, unknown>>;
+  }
+
+  private async request(
+    url: string,
+    init: RequestInit = {},
+  ): Promise<Response> {
     return withTimeout(this.timeoutMs, async (signal) => {
       const response = await this.fetchImpl(url, { ...init, signal });
       if (!response.ok) {
@@ -351,13 +555,49 @@ export class ServerSdkClient {
           response.status === 429 || response.status >= 500,
         );
       }
-      return response.json() as Promise<Record<string, unknown>>;
+      return response;
     });
   }
 }
 
 export const createServerSdkClient = (options: ServerSdkOptions) =>
   new ServerSdkClient(options);
+
+const hasValidAccessTokenResponse = (
+  response: Record<string, unknown>,
+): response is Record<string, unknown> & {
+  access_token: string;
+  expires_in: number;
+} => {
+  return (
+    typeof response.access_token === "string" &&
+    typeof response.expires_in === "number" &&
+    Number.isFinite(response.expires_in) &&
+    response.expires_in > 0
+  );
+};
+
+export const toSessionIdentity = (input: {
+  idToken: VerifiedIdToken;
+  userInfo?: Record<string, unknown>;
+}): SessionIdentity => {
+  const mergedClaims = {
+    ...input.idToken.claims,
+    ...(input.userInfo ?? {}),
+  };
+  return {
+    userId: input.idToken.sub,
+    ...(typeof mergedClaims.email === "string"
+      ? { email: mergedClaims.email }
+      : {}),
+    ...(typeof mergedClaims.email_verified === "boolean"
+      ? { emailVerified: mergedClaims.email_verified }
+      : {}),
+    permissions: stringArray(mergedClaims.permissions),
+    entitlements: recordValue(mergedClaims.entitlements),
+    claims: mergedClaims,
+  };
+};
 
 export type AuthorizationCheckRequest = {
   action: string;

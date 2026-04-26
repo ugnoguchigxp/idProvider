@@ -1,90 +1,139 @@
-# SDK分離計画（Server / Frontend）
+# Server SDK導入計画
 
 最終更新: 2026-04-26  
-対象: `packages/server-sdk` と `packages/oidc-client-sdk`
+対象: `packages/server-sdk`
 
----
+## 1. 方針
+BFF / API Gateway / server-side microservice は `packages/server-sdk` を使って IdP SSO を利用する。
 
-## 1. 結論
-- 初期実装は **`packages/server-sdk` のみ**で進める。
-- フロントエンド向けSDKは、public client を正式サポートする段階まで実装しない。
-- 認証は**IdP側で実施し、アプリへリダイレクトで戻す**前提で設計する。
-- SDK は SSO IdP 機能の利用者であり、不足している IdP 機能の代替にはしない。
-- SSO IdP としての不足点は `docs/sso-idp-gap-plan.md` を正とする。
+認証はIdP側で行い、アプリケーションには Authorization Code redirect で戻る。アプリケーション側は code exchange と token検証後、自ドメインの httpOnly local session cookie を発行する。
 
-## 2. パッケージ方針
-### 2.1 `packages/server-sdk`（優先実装）
-責務:
-- OIDC discovery metadata の取得
-- Authorization Code + PKCE の login redirect URL 生成
-- code exchange（`${OIDC_ISSUER}/token`）
-- ID Token検証
-- UserInfo取得（`${OIDC_ISSUER}/me`）
-- logout URL生成（`${OIDC_ISSUER}/session/end`）
-- サーバー間通信向けの timeout / retry / error normalize / observability
+この計画は2つの工程に分かれる。
 
-対象利用者:
-- BFF
-- API Gateway
-- 各マイクロサービス
+1. `packages/server-sdk` の実装
+2. 対象BFF / Gatewayへの組み込み
 
-### 2.2 `packages/oidc-client-sdk`（将来拡張）
-責務:
-- Authorization Code + PKCE の redirect フロー
-- `loginRedirect()` / `handleRedirectCallback()` / `logoutRedirect()`
-- token管理（最小限、漏洩対策優先）
+SDKだけではlocal session cookieを発行できない。cookie名、署名方式、保存先、session TTL、downstream microserviceへ渡す内部認証情報はアプリケーション境界の設計に依存するため、対象BFF / Gateway側で実装する。
 
-対象利用者:
-- SPA / Webフロントエンド
+## 2. 前提
+実装済み:
+- production interaction
+- PostgreSQL adapterによる OIDC provider state永続化
+- DB client registry による confidential client管理
+- Authorization Code + PKCE
+- ID Token / UserInfo
+- RP-Initiated Logout
+- 実PostgreSQL / Redis の2 client SSO E2E: `pnpm verify:sso-e2e`
 
-注記:
-- 「ログイン画面」は frontend 側で持たず、IdP の認証画面へ遷移する。
-- 初期標準構成では BFF / API Gateway が OIDC client になるため、frontend SDK は不要。
+外部SSOの正規endpointは `OIDC_ISSUER` の discovery metadata を使う。
 
-## 3. frontend向けSDK（MSALライク）実現可能性
-### 3.1 判定
-**実現可能。ただし現状のIdP設定のままでは開始不可。**
+## 3. SDK責務
+`packages/server-sdk` が担当すること:
+- discovery metadata取得
+- login redirect URL生成
+- PKCE `code_verifier` / `code_challenge` 生成
+- callback後の code exchange
+- ID Token署名検証
+- issuer / audience / azp / exp / nonce検証
+- UserInfo取得
+- token refresh
+- token introspection
+- token revocation
+- logout URL生成
+- timeout / retryable error normalize
+- `completeAuthorizationCodeCallback()` による callback処理の一括実行
+- `toSessionIdentity()` によるlocal session用identity生成
 
-### 3.2 現状の主要制約
-- OIDC provider の client 設定が envベースの単一 client 前提
-- `token_endpoint_auth_method` は実装上 `client_secret_basic` のみ
-- public client（`token_endpoint_auth_method=none`）を前提とした frontend flow が未対応
+アプリケーション側が担当すること:
+- `state`, `nonce`, `codeVerifier` の一時保存
+- callbackでの `state` 照合
+- local session cookie発行
+- downstream microserviceへ渡す内部認証情報の設計
+- token / secret / authorization header をログに出さない運用
 
-## 4. frontend対応の前提作業（IdP側）
-1. OIDC provider の client 解決を DB registry ベースへ統合する
-2. client種別ごとの auth method をサポートする
-   - confidential: `client_secret_basic`
-   - public: `none`（PKCE必須）
-3. redirect URI 検証を client単位で厳格化する
-4. OAuth/OIDC conformance test を public client ケースまで拡張する
-5. `docs/openapi.yaml` / `docs/oidc-compatibility.md` を更新する
+## 4. 実装状況
+SDK側は以下を実装対象とする。
 
-## 5. 実装順序
-1. **Phase 0: IdPのSSO P0ギャップを解消**
-   - `docs/sso-idp-gap-plan.md` のP0項目を完了
-   - IdP側で Authorization Code + PKCE / session / claims 契約を固定
-2. **Phase 1: `server-sdk` を実装**
-   - 既存サーバー連携を安定化
-   - 運用監視（429/timeout/retry）を先に固める
-3. **Phase 2: IdPのpublic client対応（必要になった場合）**
-   - OIDC provider / client registry 連携改修
-   - conformance test 拡張
-4. **Phase 3: `oidc-client-sdk` 実装（必要になった場合）**
-   - redirect login/callback/logout API
-   - サンプルSPAでE2E検証
+| 項目 | 状態 | API |
+| --- | --- | --- |
+| discovery metadata取得 | 実装済み | internal |
+| login redirect URL生成 | 実装済み | `createAuthorizationUrl()` |
+| PKCE生成 | 実装済み | `createAuthorizationUrl()` |
+| code exchange | 実装済み | `exchangeCode()` |
+| callback一括処理 | 実装済み | `completeAuthorizationCodeCallback()` |
+| ID Token署名検証 | 実装済み | `verifyIdToken()` |
+| issuer / audience / azp / exp / nonce検証 | 実装済み | `verifyIdToken()` |
+| UserInfo取得 | 実装済み | `getUserInfo()` |
+| local session用identity生成 | 実装済み | `toSessionIdentity()` |
+| token refresh | 実装済み | `refreshTokens()` |
+| token introspection | 実装済み | `introspectToken()` |
+| token revocation | 実装済み | `revokeToken()` |
+| logout URL生成 | 実装済み | `createLogoutUrl()` |
+| timeout / retryable error normalize | 実装済み | `ServerSdkError` |
 
-## 6. Go/No-Go基準
-### 6.1 server-sdk
-- OIDC discovery / authorization URL生成 / token exchange / ID Token検証 / userinfo / logout URL生成の契約テスト成功
-- 401/429/5xx/timeout のエラーマッピングが仕様通り
-- token/secret のログマスキング保証
+example BFF側は以下を実装済み。
 
-### 6.2 frontend SDK
-- public client で authorization code + PKCE が通る
-- redirect/callback/logout のE2E成功
-- 認証情報漏洩（URL/ログ/ストレージ）対策がテストで担保される
+| 項目 | 状態 | 対象 |
+| --- | --- | --- |
+| 別HonoアプリとしてのBFF | 実装済み | `apps/example-bff` |
+| IdP redirect login | 実装済み | `GET /login` |
+| callback処理 | 実装済み | `GET /callback` |
+| local session cookie発行 | 実装済み | `example_bff_session` |
+| tokenをcookieへ保存しない方針 | 実装済み | identity snapshotのみ保存 |
+| local logout | 実装済み | `POST /logout` |
+| global logout redirect | 実装済み | `POST /logout/global` |
+| login / callback / local logout後の再SSO E2E | 実装済み | `pnpm verify:example-bff-e2e` |
 
-## 7. 直近アクション
-- 直近は `packages/server-sdk` ではなく、IdPのSSO P0ギャップ整理と修正を優先する。
-- `packages/server-sdk` は、IdP側のSSO契約が固まってから実装する。
-- `packages/oidc-client-sdk` は初期スコープ外とする。
+このリポジトリでまだ本番組み込みとして未完了の工程:
+- 実サービスのBFF / Gatewayへの組み込み
+- downstream microserviceへ渡す内部認証情報の実装
+- 実サービス固有のsession store / cookie名 / TTL / 署名鍵管理
+- 実サービスBFF / Gatewayでのlogin / callback / logout E2E
+
+未完了理由:
+- `apps/example-bff` はSDK利用方法とSSO動作を確認するリファレンス実装であり、実サービスのBFF / Gatewayそのものではない。
+- `apps/admin-ui` はSPAであり、server SDKでsecretを保持する前提と合わない。
+- `apps/idp-server` はIdP本体であり、SSOを利用するRP側BFFではない。
+
+## 5. 導入手順
+1. BFF / GatewayをDB client registryに confidential client として登録する。
+2. redirect URIを登録する。
+3. `client_id` / `client_secret` をBFF / Gatewayのsecret管理に設定する。
+4. 未ログイン時に `createAuthorizationUrl()` でIdPへredirectする。
+5. callbackで `completeAuthorizationCodeCallback()` を呼ぶ。
+6. 返却された検証済みID TokenまたはUserInfoからlocal sessionのユーザー情報を作る。
+7. local session cookieを発行する。
+8. logout時はlocal logoutとIdP global logoutを分けて実装する。
+
+低レベルAPIを個別に使う場合:
+- `exchangeCode()` で token endpoint にcodeを交換する。
+- `verifyIdToken()` でID Tokenを検証する。
+- 必要に応じて `getUserInfo()` でprofileを取得する。
+- `refreshTokens()` でrefresh tokenを更新する。
+- `introspectToken()` でtoken有効性を確認する。
+- `revokeToken()` でrefresh token等を失効する。
+- `toSessionIdentity()` でlocal sessionに保存する最小identityを作る。
+
+## 6. Logout
+local logout:
+- アプリケーションのlocal session cookieだけを削除する。
+- IdP sessionは残る。
+- 再度login redirectすると再認証なしで戻れる。
+
+global logout:
+- `createLogoutUrl()` でIdP logout URLを生成してredirectする。
+- IdP sessionを削除する。
+- 他clientでも再ログインが必要になる。
+
+## 7. Go基準
+- `pnpm verify:sso-e2e` が成功する。
+- `pnpm verify:example-bff-e2e` が成功する。
+- 対象BFF / Gatewayでlogin / callback / logoutがE2E成功する。
+- local session cookieが httpOnly / secure / sameSite 方針に従う。
+- token / secret / authorization header がログに出ない。
+- IdP再起動後もSSOが継続する。
+
+## 8. 次に必要な実装
+この計画を完全完了にするには、実サービスのBFF / Gatewayへ組み込む必要がある。
+
+`apps/example-bff` はSDK利用例と回帰テストとして有効だが、実サービスのsession設計を代替しない。

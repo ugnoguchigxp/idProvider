@@ -55,6 +55,34 @@ importers:
         specifier: ^3.2.4
         version: 3.2.4(@types/node@24.12.2)(msw@2.13.5(@types/node@24.12.2)(typescript@5.9.3))
 
+  apps/example-bff:
+    dependencies:
+      '@hono/node-server':
+        specifier: ^1.13.7
+        version: 1.19.14(hono@4.12.15)
+      '@idp/server-sdk':
+        specifier: workspace:*
+        version: link:../../packages/server-sdk
+      hono:
+        specifier: ^4.7.7
+        version: 4.12.15
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.12.2
+      '@vitest/coverage-v8':
+        specifier: ^3.1.2
+        version: 3.2.4(vitest@3.2.4(@types/node@24.12.2)(msw@2.13.5(@types/node@24.12.2)(typescript@5.9.3)))
+      tsx:
+        specifier: ^4.19.3
+        version: 4.21.0
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.1.2
+        version: 3.2.4(@types/node@24.12.2)(msw@2.13.5(@types/node@24.12.2)(typescript@5.9.3))
+
   apps/idp-server:
     dependencies:
       '@hono/node-server':
