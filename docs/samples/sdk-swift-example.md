@@ -36,6 +36,22 @@ let tokens = try await client.exchangeCode(
 - `OidcNetworkError`: 再試行
 - `OidcInvalidTokenError`: 再認証
 
-## 5. 注意点
+## 5. 失敗ケースと復旧戦略
+1. callback `state` 不一致
+- 現在の認証試行を無効化し、`beginLogin()` から再開始する
+2. `invalid_grant` / `token_expired`
+- Keychainからrefresh tokenを削除し、ログイン画面へ遷移する
+3. `mfa_required`
+- step-up MFA導線へ遷移する
+- 成功後に `exchangeCode()` でセッション再確立する
+4. 通信タイムアウト / 一時的5xx / rate-limit
+- 250ms, 500ms, 1000msで最大3回再試行する
+- 失敗時はUIで再試行を促し、強制終了させない
+5. `invalid_client` / `OidcInvalidTokenError`
+- 設定不整合として扱い、ユーザーには一般メッセージ表示
+- 開発ログへエラーコードと相関IDのみ記録する
+
+## 6. 注意点
 - `codeVerifier` / `refreshToken` はKeychainで保護
 - バックグラウンド復帰時にtoken有効期限を確認する
+- ログにtoken本体・PIIを出力しない

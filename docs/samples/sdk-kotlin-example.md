@@ -38,6 +38,23 @@ val token = client.exchangeCode(
 - `OidcNetworkError`: リトライ可
 - `OidcInvalidTokenError`: 再ログイン要求
 
-## 6. 注意点
+## 6. 失敗ケースと復旧戦略
+1. callback `state` 不一致
+- セッション破棄し、`beginLogin()` から認証フローを再開する
+2. `invalid_grant` / `token_expired`（refresh失敗）
+- 保存済みrefresh tokenを破棄する
+- ログイン画面へ遷移し、`beginLogin()` からやり直す
+3. `mfa_required`
+- step-up MFA画面へ遷移する
+- 成功後に `exchangeCode()` を再実行してセッション再確立する
+4. ネットワーク断 / 一時的5xx / rate-limit
+- 250ms, 500ms, 1000msの指数バックオフで最大3回再試行する
+- 3回失敗したらユーザー操作で再試行させる
+5. `invalid_client` / `OidcInvalidTokenError`
+- ユーザー向けには一般化メッセージを表示する
+- 開発者向けにエラーコードとrequest idを記録する
+
+## 7. 注意点
 - `codeVerifier` と `nonce` は端末内安全ストレージに短時間保持する
 - リフレッシュトークンは平文ログ出力しない
+- ログにはPII/トークンを出さず、`traceId` とエラーコードのみ残す

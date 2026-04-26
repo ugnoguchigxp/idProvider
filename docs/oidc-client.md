@@ -38,6 +38,26 @@
 - `refresh_token` で `access_token`（必要に応じて `id_token`, `refresh_token`）を再取得する
 - 失敗時はエラーコードに応じて再試行可否を判定する
 
+### 3.5 Mobile再認証ポリシー（iOS / Android共通）
+refresh失敗時とstep-up要求時の最小挙動を固定する。
+
+- `invalid_grant` / `token_expired`
+  - refresh tokenを破棄し、再ログイン画面へ遷移する
+- `mfa_required`
+  - step-up MFA画面へ遷移し、成功後に再度token発行フローを実行する
+- `oidc_timeout` / `oidc_rate_limited` / 一時的 `oidc_http_error`
+  - バックオフ付きで最大3回再試行する
+  - 上限到達後は「通信エラー」扱いでユーザー再試行を促す
+- `invalid_client` / `oidc_invalid_token`
+  - 設定不整合として扱い、ユーザー向けには一般化した失敗メッセージを表示する
+  - 開発者向けには詳細ログを残す
+
+状態遷移（簡易）:
+1. refresh成功 -> セッション継続
+2. refresh失敗（再試行可能） -> 再試行
+3. refresh失敗（再試行不可） -> ログイン画面へ遷移
+4. `mfa_required` -> step-up MFA -> 成功後に継続、失敗時はログイン画面へ遷移
+
 ### 3.3 Revocation
 - `access_token` または `refresh_token` を失効できる
 - 失効後の再利用は成功させない
@@ -77,6 +97,10 @@
 - `oidc_http_error`
 - `oidc_rate_limited`
 - `oidc_unsupported`
+- `missing_token`
+- `invalid_token`
+- `token_expired`
+- `insufficient_scope`
 
 ### 5.2 再試行ポリシー
 - retryable = `true`
