@@ -303,6 +303,24 @@ describe("OpenAPI contract: public auth", () => {
     });
   });
 
+  it("POST /oauth/token 429", async () => {
+    deps.rateLimiter.consume.mockResolvedValueOnce({ allowed: false });
+    const res = await app.request("/oauth/token", {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${Buffer.from("client:secret").toString("base64")}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ refreshToken: "rt_mock_token_long_enough_16" }),
+    });
+
+    expect(res.status).toBe(429);
+    await assertJsonResponseMatchesOpenApi(res, {
+      method: "post",
+      path: "/oauth/token",
+    });
+  });
+
   it("POST /v1/token/refresh 200", async () => {
     deps.authService.refresh.mockResolvedValue(
       ok({

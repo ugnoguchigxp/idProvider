@@ -1,0 +1,44 @@
+name: OIDC Conformance
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 20 * * 0" # Every Monday 05:00 JST
+
+jobs:
+  internal-conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm verify:oidc-conformance
+
+  external-suite-precheck:
+    if: ${{ secrets.OIDC_CONFORMANCE_DISCOVERY_URL != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required endpoint urls are reachable
+        env:
+          DISCOVERY_URL: ${{ secrets.OIDC_CONFORMANCE_DISCOVERY_URL }}
+          JWKS_URL: ${{ secrets.OIDC_CONFORMANCE_JWKS_URL }}
+          TOKEN_URL: ${{ secrets.OIDC_CONFORMANCE_TOKEN_URL }}
+          REVOCATION_URL: ${{ secrets.OIDC_CONFORMANCE_REVOCATION_URL }}
+          INTROSPECTION_URL: ${{ secrets.OIDC_CONFORMANCE_INTROSPECTION_URL }}
+        run: |
+          set -euo pipefail
+          for url in "$DISCOVERY_URL" "$JWKS_URL" "$TOKEN_URL" "$REVOCATION_URL" "$INTROSPECTION_URL"; do
+            if [ -z "$url" ]; then
+              echo "missing required secret for external suite precheck" >&2
+              exit 1
+            fi
+          done
+          curl -fsS "$DISCOVERY_URL" >/dev/null
+          curl -fsS "$JWKS_URL" >/dev/null
+          echo "external suite precheck passed"

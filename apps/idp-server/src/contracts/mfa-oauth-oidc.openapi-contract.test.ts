@@ -38,9 +38,29 @@ describe("OpenAPI contract: mfa + oauth/oidc", () => {
     });
   });
 
+  it("GET /.well-known/jwks.json 429", async () => {
+    deps.rateLimiter.consume.mockResolvedValueOnce({ allowed: false });
+    const res = await app.request("/.well-known/jwks.json");
+    expect(res.status).toBe(429);
+    await assertJsonResponseMatchesOpenApi(res, {
+      method: "get",
+      path: "/.well-known/jwks.json",
+    });
+  });
+
   it("GET /.well-known/openid-configuration 200", async () => {
     const res = await app.request("/.well-known/openid-configuration");
     expect(res.status).toBe(200);
+    await assertJsonResponseMatchesOpenApi(res, {
+      method: "get",
+      path: "/.well-known/openid-configuration",
+    });
+  });
+
+  it("GET /.well-known/openid-configuration 429", async () => {
+    deps.rateLimiter.consume.mockResolvedValueOnce({ allowed: false });
+    const res = await app.request("/.well-known/openid-configuration");
+    expect(res.status).toBe(429);
     await assertJsonResponseMatchesOpenApi(res, {
       method: "get",
       path: "/.well-known/openid-configuration",
@@ -79,6 +99,23 @@ describe("OpenAPI contract: mfa + oauth/oidc", () => {
     });
   });
 
+  it("POST /oauth/revocation 429", async () => {
+    deps.rateLimiter.consume.mockResolvedValueOnce({ allowed: false });
+    const res = await app.request("/oauth/revocation", {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${Buffer.from("client:secret").toString("base64")}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ token: "at_mock_token_long_enough_16" }),
+    });
+    expect(res.status).toBe(429);
+    await assertJsonResponseMatchesOpenApi(res, {
+      method: "post",
+      path: "/oauth/revocation",
+    });
+  });
+
   it("POST /oauth/introspection 200", async () => {
     deps.authService.introspectToken.mockResolvedValue(ok({ active: false }));
     const res = await app.request("/oauth/introspection", {
@@ -103,6 +140,23 @@ describe("OpenAPI contract: mfa + oauth/oidc", () => {
       body: JSON.stringify({ token: "at_mock_token_long_enough_16" }),
     });
     expect(res.status).toBe(401);
+    await assertJsonResponseMatchesOpenApi(res, {
+      method: "post",
+      path: "/oauth/introspection",
+    });
+  });
+
+  it("POST /oauth/introspection 429", async () => {
+    deps.rateLimiter.consume.mockResolvedValueOnce({ allowed: false });
+    const res = await app.request("/oauth/introspection", {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${Buffer.from("client:secret").toString("base64")}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ token: "at_mock_token_long_enough_16" }),
+    });
+    expect(res.status).toBe(429);
     await assertJsonResponseMatchesOpenApi(res, {
       method: "post",
       path: "/oauth/introspection",

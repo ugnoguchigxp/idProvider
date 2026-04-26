@@ -250,6 +250,7 @@ pnpm verify
 
 - `pnpm verify:security` (`pnpm audit --audit-level=high`)
 - `pnpm verify:contract` (`apps/idp-server` の OpenAPI 契約テストのみ実行)
+- `pnpm verify:oidc-conformance` (OIDC/OAuth conformance focused test + OpenAPI lint)
 
 ## ドキュメント
 
@@ -257,6 +258,7 @@ pnpm verify
 - 管理UI計画: [`docs/admin-ui-plan.md`](docs/admin-ui-plan.md)
 - Google連携設計: [`docs/google-federation.md`](docs/google-federation.md)
 - OIDC Client 計画: [`docs/oidc-client.md`](docs/oidc-client.md)
+- OpenID Conformance Suite Runbook: [`docs/openid-conformance-suite-runbook.md`](docs/openid-conformance-suite-runbook.md)
 - QA/性能計画: [`docs/qa-and-performance-plan.md`](docs/qa-and-performance-plan.md)
 
 ## ライセンス

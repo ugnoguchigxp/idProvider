@@ -16,6 +16,8 @@ describe("Global Routes", () => {
         OIDC_PORT: 3001,
         OAUTH_CLIENT_ID: "client-id",
         OAUTH_CLIENT_SECRET: "client-secret",
+        RATE_LIMIT_OAUTH_PER_MIN: 10,
+        RATE_LIMIT_DISCOVERY_PER_MIN: 10,
       },
       authService: {
         revokeByToken: vi.fn().mockResolvedValue(ok({ status: "accepted" })),
@@ -62,6 +64,26 @@ describe("Global Routes", () => {
 
     const res = await app.request("/.well-known/openid-configuration");
     expect(res.status).toBe(502);
+  });
+
+  it("GET /.well-known/openid-configuration should return 429 when rate limited", async () => {
+    deps.rateLimiter.consume.mockResolvedValueOnce({ allowed: false });
+    const res = await app.request("/.well-known/openid-configuration");
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({
+      code: "rate_limited",
+      message: "Too many requests",
+    });
+  });
+
+  it("GET /.well-known/jwks.json should return 429 when rate limited", async () => {
+    deps.rateLimiter.consume.mockResolvedValueOnce({ allowed: false });
+    const res = await app.request("/.well-known/jwks.json");
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({
+      code: "rate_limited",
+      message: "Too many requests",
+    });
   });
 
   it("POST /oauth/revocation should revoke provided token", async () => {
