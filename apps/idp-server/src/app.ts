@@ -70,7 +70,9 @@ export const buildApp = (deps: AppDependencies) => {
           clientId: deps.env.OAUTH_CLIENT_ID,
           clientSecret: deps.env.OAUTH_CLIENT_SECRET,
         });
-        return deps.authService.revokeByToken(payload.token);
+        const result = await deps.authService.revokeByToken(payload.token);
+        if (!result.ok) throw result.error;
+        return result.value;
       },
     }),
   );

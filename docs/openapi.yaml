@@ -468,14 +468,12 @@ components:
     MfaEnrollResponse:
       type: object
       additionalProperties: false
-      required: [id, secret, provisioningUri]
+      required: [factorId, secret]
       properties:
-        id:
+        factorId:
           type: string
           format: uuid
         secret:
-          type: string
-        provisioningUri:
           type: string
 
     MfaVerifyRequest:
@@ -525,6 +523,8 @@ components:
           type: boolean
         permissionKey:
           type: string
+        source:
+          type: [string, 'null']
 
     EntitlementCheckRequest:
       type: object
@@ -1671,6 +1671,12 @@ paths:
                 $ref: '#/components/schemas/LinkedResponse'
         '401':
           description: Unauthorized or invalid password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Google identity linking disabled
           content:
             application/json:
               schema:

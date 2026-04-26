@@ -1,4 +1,4 @@
-# OpenAPI契約テスト計画（実行可能版）
+# OpenAPI契約テスト計画（実装完了）
 
 ## 1. 目的
 `apps/idp-server`の実レスポンスが`docs/openapi.yaml`と一致していることをCIで自動検証し、契約破壊をマージ前に検出する。
@@ -36,17 +36,16 @@
 - `@apidevtools/swagger-parser`: OpenAPIのdereference
 - `ajv`: JSON schema validation
 
-## 5. 追加/変更ファイル（予定）
+## 5. 追加/変更ファイル（実績）
 - `apps/idp-server/src/test-utils/openapi-contract.ts`
-- `apps/idp-server/src/test-utils/openapi-contract.test.ts`（validator単体テスト）
-- `apps/idp-server/src/modules/auth/public-routes.test.ts`（契約検証追加）
-- `apps/idp-server/src/modules/auth/auth.test.ts`
-- `apps/idp-server/src/modules/mfa/mfa.test.ts`
-- `apps/idp-server/src/modules/sessions/sessions.test.ts`
-- `apps/idp-server/src/modules/users/users.test.ts`
-- `apps/idp-server/src/modules/config/config.test.ts`
+- `apps/idp-server/src/contracts/helpers.ts`
+- `apps/idp-server/src/contracts/public-auth.openapi-contract.test.ts`
+- `apps/idp-server/src/contracts/protected.openapi-contract.test.ts`
+- `apps/idp-server/src/contracts/mfa-oauth-oidc.openapi-contract.test.ts`
 - `apps/idp-server/package.json`（`test:contract`追加）
 - ルート`package.json`（`verify:contract`追加、`verify`へ接続）
+- `apps/idp-server/src/app.ts`（`/oauth/revocation`のResult unwrap修正）
+- `docs/openapi.yaml`（実装に合わせた契約補正）
 
 ## 6. APIテストマトリクス（初期導入）
 ### Public Auth
@@ -108,15 +107,15 @@
 - `POST /oauth/revocation`: 200, 401
 - `GET /v1/admin/configs`: 200, 401, 403
 
-## 7. 実装ステップ
-## Step 0: 事前整備（0.5日）
+## 7. 実装ステップ（完了）
+## Step 0: 事前整備（完了）
 - `docs/openapi.yaml`のoperationId/path/statusを現行実装と最終確認
 - `oneOf`対象レスポンスを一覧化
 
 完了条件:
 - テスト対象endpoint/statusの一覧が確定
 
-## Step 1: validator基盤実装（1日）
+## Step 1: validator基盤実装（完了）
 - `openapi-contract.ts`を作成
 - 実装内容:
   - OpenAPI読み込み
@@ -124,10 +123,11 @@
   - `validateResponse({ method, path, status, body, headers? })`
   - 失敗時メッセージ整形（path/method/status/schemaPath/actual）
 
-完了条件:
-- validator単体テストが通る
+実績:
+- `validateResponseAgainstOpenApi` と `assertJsonResponseMatchesOpenApi` を実装
+- 失敗時に `method/path/status/details/body` を出力
 
-## Step 2: matcher実装（0.5日）
+## Step 2: matcher実装（完了）
 - Vitest custom helperを実装
 - 呼び出し例:
 
@@ -141,34 +141,35 @@ await expectResponseToMatchOpenApi({
 });
 ```
 
-完了条件:
-- 既存1テストで契約検証が動く
+実績:
+- `src/contracts` の全ケースで helper を共通利用
 
-## Step 3: Public Authへの適用（1日）
+## Step 3: Public Authへの適用（完了）
 - `public-routes.test.ts`と`auth.test.ts`へ導入
 - `oneOf`分岐（LoginResponse/MfaRequiredResponse）を個別ケースで固定
 
-完了条件:
-- Public Auth契約テストが安定して通る
+実績:
+- `src/contracts/public-auth.openapi-contract.test.ts` で Public Auth マトリクスを実装
 
-## Step 4: Protected/MFA/Session/User適用（1.5日）
+## Step 4: Protected/MFA/Session/User適用（完了）
 - `mfa.test.ts`, `sessions.test.ts`, `users.test.ts`, `config.test.ts`へ適用
 - 主要401/403/429契約を追加
 
-完了条件:
-- 対象endpointの主要ステータスが契約検証される
+実績:
+- `src/contracts/protected.openapi-contract.test.ts`
+- `src/contracts/mfa-oauth-oidc.openapi-contract.test.ts`
 
-## Step 5: CI統合（0.5日）
+## Step 5: CI統合（完了）
 - `apps/idp-server/package.json`に`test:contract`追加
 - ルート`package.json`に`verify:contract`追加
 - `verify`または`verify:quick`へ組み込み
 
-完了条件:
-- `pnpm verify`で契約違反が検出される
+実績:
+- `pnpm verify` フローに `verify:contract` を統合済み
 
 ## 8. スクリプト設計
 - `apps/idp-server/package.json`
-  - `test:contract`: `vitest run --dir src/modules --reporter=default`（契約タグ付きテストを含む）
+  - `test:contract`: `vitest run src/contracts`
 - ルート`package.json`
   - `verify:contract`: `pnpm --filter @idp/idp-server test:contract`
   - `verify`: 既存verifyフローへ`verify:contract`を追加
@@ -200,6 +201,7 @@ await expectResponseToMatchOpenApi({
 - 契約検証ユーティリティ
 - 契約検証付きintegration tests
 - CI統合済みverifyフロー
+- 2026-04-26時点: `69` contract testsがgreen
 - 運用ルール:
   - API変更時はOpenAPIと契約テストを同時更新
 

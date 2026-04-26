@@ -241,12 +241,14 @@ pnpm verify
 1. `pnpm verify:lint` (Biome)
 2. `pnpm typecheck`
 3. `pnpm test`
-4. `pnpm verify:build`
-5. `pnpm verify:openapi` (Redocly lint)
+4. `pnpm verify:contract` (OpenAPI 契約テスト)
+5. `pnpm verify:build`
+6. `pnpm verify:openapi` (Redocly lint)
 
 補助コマンド:
 
 - `pnpm verify:security` (`pnpm audit --audit-level=high`)
+- `pnpm verify:contract` (`apps/idp-server` の OpenAPI 契約テストのみ実行)
 
 ## ドキュメント
 

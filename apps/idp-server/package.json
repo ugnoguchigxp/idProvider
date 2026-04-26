@@ -13,6 +13,7 @@
     "account-deletion:dry-run": "tsx src/jobs/run-account-deletion.ts --dry-run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:contract": "vitest run src/contracts",
     "lint": "biome check src",
     "db:seed": "tsx src/seed.ts"
   },
@@ -32,17 +33,19 @@
     "@opentelemetry/semantic-conventions": "^1.40.0",
     "argon2": "^0.43.0",
     "drizzle-orm": "^0.44.0",
+    "google-auth-library": "^10.6.2",
     "hono": "^4.7.7",
     "oidc-provider": "^9.5.1",
     "otplib": "^12.0.1",
     "pino": "^9.7.0",
-    "google-auth-library": "^10.6.2",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@apidevtools/swagger-parser": "^12.1.0",
     "@types/node": "^24.0.0",
     "@types/oidc-provider": "^9.5.0",
     "@vitest/coverage-v8": "^3.1.2",
+    "ajv": "^8.20.0",
     "msw": "^2.8.2",
     "tsx": "^4.19.3",
     "typescript": "^5.8.3",

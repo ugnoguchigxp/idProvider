@@ -1,3 +1,4 @@
+import { ok } from "@idp/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "./app.js";
 
@@ -17,7 +18,7 @@ describe("Global Routes", () => {
         OAUTH_CLIENT_SECRET: "client-secret",
       },
       authService: {
-        revokeByToken: vi.fn().mockResolvedValue({ status: "accepted" }),
+        revokeByToken: vi.fn().mockResolvedValue(ok({ status: "accepted" })),
         authenticateAccessToken: vi.fn(),
       },
       userService: {},
