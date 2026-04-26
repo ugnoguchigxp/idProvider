@@ -1,4 +1,4 @@
-import { ok } from "@idp/shared";
+import { ApiError, ok } from "@idp/shared";
 import { vi } from "vitest";
 
 export const createContractDeps = () => ({
@@ -110,6 +110,49 @@ export const createContractDeps = () => ({
       source: "rbac",
     }),
     entitlementCheck: vi.fn().mockResolvedValue({ allowed: true }),
+  },
+  oauthClientService: {
+    authenticateClientBasic: vi
+      .fn()
+      .mockImplementation(async (authorization: string | undefined) => {
+        if (!authorization?.startsWith("Basic ")) {
+          throw new ApiError(
+            401,
+            "invalid_client",
+            "OAuth client authentication required",
+          );
+        }
+        const expected = `Basic ${Buffer.from("client:secret").toString("base64")}`;
+        if (authorization !== expected) {
+          throw new ApiError(
+            401,
+            "invalid_client",
+            "Invalid OAuth client credentials",
+          );
+        }
+        return ok({ clientPkId: "c1", clientId: "client", status: "active" });
+      }),
+    listClients: vi.fn().mockResolvedValue(ok({ clients: [] })),
+    createClient: vi.fn().mockResolvedValue(
+      ok({
+        status: "created",
+        clientId: "client_new",
+        clientSecret: "ocs_secret",
+        secretHint: "cret",
+      }),
+    ),
+    updateClient: vi
+      .fn()
+      .mockResolvedValue(ok({ status: "updated", clientId: "client_new" })),
+    rotateSecret: vi.fn().mockResolvedValue(
+      ok({
+        status: "rotated",
+        clientId: "client_new",
+        clientSecret: "ocs_next_secret",
+        secretHint: "cret",
+        graceUntil: null,
+      }),
+    ),
   },
   webauthnService: {
     generateAuthenticationOptions: vi.fn().mockResolvedValue({

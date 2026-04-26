@@ -4,6 +4,7 @@ import { AuthRepository } from "../modules/auth/auth.repository.js";
 import { VerificationRepository } from "../modules/auth/verification.repository.js";
 import { MfaRepository } from "../modules/mfa/mfa.repository.js";
 import { MfaRecoveryRepository } from "../modules/mfa/mfa-recovery.repository.js";
+import { OAuthClientRepository } from "../modules/oauth-clients/oauth-client.repository.js";
 import { RBACRepository } from "../modules/rbac/rbac.repository.js";
 import { SessionRepository } from "../modules/sessions/session.repository.js";
 import { AccountDeletionRepository } from "../modules/users/account-deletion.repository.js";
@@ -22,6 +23,7 @@ export const createRepositories = (db: DbClient) => ({
   sessionRepository: new SessionRepository(db),
   mfaRepository: new MfaRepository(db),
   mfaRecoveryRepository: new MfaRecoveryRepository(db),
+  oauthClientRepository: new OAuthClientRepository(db),
   rbacRepository: new RBACRepository(db),
 });
 

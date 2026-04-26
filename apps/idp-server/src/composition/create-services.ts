@@ -4,6 +4,7 @@ import type { AppEnv } from "../config/env.js";
 import { AuthService } from "../modules/auth/auth.service.js";
 import { MfaService } from "../modules/mfa/mfa.service.js";
 import { MfaRecoveryService } from "../modules/mfa/mfa-recovery.service.js";
+import { OAuthClientService } from "../modules/oauth-clients/oauth-client.service.js";
 import { RBACService } from "../modules/rbac/rbac.service.js";
 import { SessionService } from "../modules/sessions/sessions.service.js";
 import { AccountDeletionService } from "../modules/users/account-deletion.service.js";
@@ -93,6 +94,12 @@ export const createServices = ({
     onSecurityEvent,
   });
 
+  const oauthClientService = new OAuthClientService({
+    oauthClientRepository: repositories.oauthClientRepository,
+    auditRepository: repositories.auditRepository,
+    env,
+  });
+
   return {
     authService,
     userService,
@@ -101,6 +108,7 @@ export const createServices = ({
     mfaService,
     mfaRecoveryService,
     rbacService,
+    oauthClientService,
     webauthnService,
   };
 };

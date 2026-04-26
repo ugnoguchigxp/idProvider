@@ -1,4 +1,4 @@
-import { ok } from "@idp/shared";
+import { ApiError, ok } from "@idp/shared";
 import type { Hono } from "hono";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../../app.js";
@@ -48,6 +48,24 @@ describe("Public Routes (via buildApp)", () => {
       mfaRecoveryService: {},
       rbacService: {
         authorizationCheck: vi.fn(),
+      },
+      oauthClientService: {
+        authenticateClientBasic: vi
+          .fn()
+          .mockImplementation(async (authorization: string | undefined) => {
+            if (!authorization?.startsWith("Basic ")) {
+              throw new ApiError(
+                401,
+                "invalid_client",
+                "OAuth client authentication required",
+              );
+            }
+            return ok({
+              clientPkId: "c1",
+              clientId: "client",
+              status: "active",
+            });
+          }),
       },
       webauthnService: {
         generateAuthenticationOptions: vi.fn(),

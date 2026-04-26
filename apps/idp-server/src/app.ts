@@ -2,12 +2,12 @@ import { ApiError, oauthRevocationRequestSchema } from "@idp/shared";
 import { Hono } from "hono";
 import { publicEndpointAdapter } from "./adapters/public-endpoint-adapter.js";
 import type { AppDependencies } from "./core/app-context.js";
-import { assertOAuthClientAuth } from "./core/oauth-client-auth.js";
 import { handleError } from "./middleware/error-handler.js";
 import { traceMiddleware } from "./middleware/trace.js";
 import { createAuthRoutes } from "./modules/auth/auth.routes.js";
 import { createConfigRoutes } from "./modules/config/config.routes.js";
 import { createMfaRoutes } from "./modules/mfa/mfa.routes.js";
+import { createOAuthClientRoutes } from "./modules/oauth-clients/oauth-client.routes.js";
 import { createRbacRoutes } from "./modules/rbac/rbac.routes.js";
 import { createSessionRoutes } from "./modules/sessions/sessions.routes.js";
 import { createUserRoutes } from "./modules/users/users.routes.js";
@@ -26,6 +26,7 @@ export const buildApp = (deps: AppDependencies) => {
   app.route("/", createMfaRoutes(deps));
   app.route("/", createRbacRoutes(deps));
   app.route("/", createConfigRoutes(deps));
+  app.route("/", createOAuthClientRoutes(deps));
 
   app.get("/healthz", (c) => c.json({ ok: true }));
   app.get("/readyz", (c) => c.json({ ready: true }));
@@ -105,10 +106,9 @@ export const buildApp = (deps: AppDependencies) => {
             "Too many OAuth revocation requests",
           );
         }
-        assertOAuthClientAuth(c.req.header("authorization"), {
-          clientId: deps.env.OAUTH_CLIENT_ID,
-          clientSecret: deps.env.OAUTH_CLIENT_SECRET,
-        });
+        await deps.oauthClientService.authenticateClientBasic(
+          c.req.header("authorization"),
+        );
         const result = await deps.authService.revokeByToken(payload.token);
         if (!result.ok) throw result.error;
         return result.value;

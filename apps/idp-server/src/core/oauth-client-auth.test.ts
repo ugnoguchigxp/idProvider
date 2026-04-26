@@ -1,25 +1,31 @@
 import { ApiError } from "@idp/shared";
 import { describe, expect, it } from "vitest";
-import { assertOAuthClientAuth } from "./oauth-client-auth.js";
+import {
+  parseOAuthClientBasicAuth,
+  safeEqualString,
+} from "./oauth-client-auth.js";
 
 describe("oauth-client-auth", () => {
-  const credentials = { clientId: "cid", clientSecret: "csec" };
-
-  it("should pass with correct Basic auth", () => {
+  it("should parse correct Basic auth", () => {
     const authHeader = `Basic ${Buffer.from("cid:csec").toString("base64")}`;
-    expect(() => assertOAuthClientAuth(authHeader, credentials)).not.toThrow();
+    expect(parseOAuthClientBasicAuth(authHeader)).toEqual({
+      clientId: "cid",
+      clientSecret: "csec",
+    });
   });
 
   it("should throw 401 if header missing", () => {
-    expect(() => assertOAuthClientAuth(undefined, credentials)).toThrow(
-      ApiError,
-    );
+    expect(() => parseOAuthClientBasicAuth(undefined)).toThrow(ApiError);
   });
 
   it("should throw 401 if credentials mismatch", () => {
-    const authHeader = `Basic ${Buffer.from("wrong:wrong").toString("base64")}`;
-    expect(() => assertOAuthClientAuth(authHeader, credentials)).toThrow(
-      ApiError,
-    );
+    const authHeader = `Basic ${Buffer.from("wrong").toString("base64")}`;
+    expect(() => parseOAuthClientBasicAuth(authHeader)).toThrow(ApiError);
+  });
+
+  it("safeEqualString should compare in constant-time for equal-length values", () => {
+    expect(safeEqualString("abc", "abc")).toBe(true);
+    expect(safeEqualString("abc", "abd")).toBe(false);
+    expect(safeEqualString("abc", "ab")).toBe(false);
   });
 });

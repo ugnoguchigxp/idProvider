@@ -10,6 +10,7 @@ import type { AuditRepository } from "../modules/audit/audit.repository.js";
 import type { AuthService } from "../modules/auth/auth.service.js";
 import type { MfaService } from "../modules/mfa/mfa.service.js";
 import type { MfaRecoveryService } from "../modules/mfa/mfa-recovery.service.js";
+import type { OAuthClientService } from "../modules/oauth-clients/oauth-client.service.js";
 import type { RBACService } from "../modules/rbac/rbac.service.js";
 import type { SessionService } from "../modules/sessions/sessions.service.js";
 import type { AccountDeletionService } from "../modules/users/account-deletion.service.js";
@@ -25,6 +26,7 @@ export type AppDependencies = {
   mfaService: MfaService;
   mfaRecoveryService: MfaRecoveryService;
   rbacService: RBACService;
+  oauthClientService: OAuthClientService;
   webauthnService: WebAuthnService;
   configService: ConfigService;
   auditRepository: AuditRepository;

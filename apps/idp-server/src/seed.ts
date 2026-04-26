@@ -2,6 +2,10 @@ import { ConfigService } from "@idp/auth-core";
 import {
   createDb,
   eq,
+  oauthClientRedirectUris,
+  oauthClientScopes,
+  oauthClientSecrets,
+  oauthClients,
   permissions,
   rolePermissions,
   roles,
@@ -11,6 +15,7 @@ import {
   users,
 } from "@idp/db";
 import argon2 from "argon2";
+import { hashPassword } from "./core/password.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -115,6 +120,74 @@ async function seed() {
     subject: "【gxp-idProvider】パスワードリセットのご案内",
     body: "以下のトークンを使用して、パスワードをリセットしてください：\n\n{{token}}",
   });
+
+  // 4.5 OAuth Clients
+  console.log("  Seeding oauth clients...");
+  const seedClientId = process.env.OAUTH_CLIENT_ID || "local-client";
+  const seedClientSecret =
+    process.env.OAUTH_CLIENT_SECRET || "local-client-secret";
+  const [seedClient] = await db
+    .insert(oauthClients)
+    .values({
+      clientId: seedClientId,
+      name: "Local Default Client",
+      clientType: "confidential",
+      tokenEndpointAuthMethod: "client_secret_basic",
+      status: "active",
+    })
+    .onConflictDoUpdate({
+      target: oauthClients.clientId,
+      set: {
+        name: "Local Default Client",
+        status: "active",
+        updatedAt: new Date(),
+      },
+    })
+    .returning();
+  if (!seedClient) {
+    throw new Error("Failed to create or update seed oauth client");
+  }
+
+  const existingSecret = await db
+    .select()
+    .from(oauthClientSecrets)
+    .where(eq(oauthClientSecrets.clientPkId, seedClient.id))
+    .limit(1);
+  if (existingSecret.length === 0) {
+    await db.insert(oauthClientSecrets).values({
+      clientPkId: seedClient.id,
+      secretHash: await hashPassword(seedClientSecret),
+      secretHint: seedClientSecret.slice(-4),
+      isPrimary: true,
+    });
+  }
+
+  const defaultScopes = ["openid", "profile", "email"];
+  for (const scope of defaultScopes) {
+    await db
+      .insert(oauthClientScopes)
+      .values({
+        clientPkId: seedClient.id,
+        scope,
+      })
+      .onConflictDoNothing();
+  }
+
+  const defaultRedirectUris = (
+    process.env.OIDC_CLIENT_REDIRECT_URIS || "http://localhost:5173/callback"
+  )
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  for (const redirectUri of defaultRedirectUris) {
+    await db
+      .insert(oauthClientRedirectUris)
+      .values({
+        clientPkId: seedClient.id,
+        redirectUri,
+      })
+      .onConflictDoNothing();
+  }
 
   // 5. Test Users
   console.log("  Creating test users...");

@@ -1,12 +1,12 @@
 import { timingSafeEqual } from "node:crypto";
 import { ApiError } from "@idp/shared";
 
-type OAuthClientCredentials = {
+export type OAuthClientCredentials = {
   clientId: string;
   clientSecret: string;
 };
 
-const safeEqualString = (left: string, right: string): boolean => {
+export const safeEqualString = (left: string, right: string): boolean => {
   const leftBuf = Buffer.from(left, "utf8");
   const rightBuf = Buffer.from(right, "utf8");
   if (leftBuf.length !== rightBuf.length) {
@@ -15,10 +15,9 @@ const safeEqualString = (left: string, right: string): boolean => {
   return timingSafeEqual(leftBuf, rightBuf);
 };
 
-export const assertOAuthClientAuth = (
+export const parseOAuthClientBasicAuth = (
   authorization: string | undefined,
-  credentials: OAuthClientCredentials,
-): void => {
+): OAuthClientCredentials => {
   if (!authorization?.startsWith("Basic ")) {
     throw new ApiError(
       401,
@@ -41,15 +40,5 @@ export const assertOAuthClientAuth = (
 
   const clientId = decoded.slice(0, separator);
   const clientSecret = decoded.slice(separator + 1);
-
-  if (
-    !safeEqualString(clientId, credentials.clientId) ||
-    !safeEqualString(clientSecret, credentials.clientSecret)
-  ) {
-    throw new ApiError(
-      401,
-      "invalid_client",
-      "Invalid OAuth client credentials",
-    );
-  }
+  return { clientId, clientSecret };
 };

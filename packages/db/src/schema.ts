@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   index,
+  integer,
   jsonb,
   pgTable,
   text,
@@ -465,3 +466,124 @@ export const systemConfigs = pgTable("system_configs", {
     .notNull()
     .defaultNow(),
 });
+
+export const oauthClients = pgTable(
+  "oauth_clients",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: varchar("client_id", { length: 128 }).notNull(),
+    name: varchar("name", { length: 160 }).notNull(),
+    clientType: varchar("client_type", { length: 32 })
+      .notNull()
+      .default("confidential"),
+    tokenEndpointAuthMethod: varchar("token_endpoint_auth_method", {
+      length: 64,
+    })
+      .notNull()
+      .default("client_secret_basic"),
+    status: varchar("status", { length: 32 }).notNull().default("active"),
+    accessTokenTtlSeconds: integer("access_token_ttl_seconds"),
+    refreshTokenTtlSeconds: integer("refresh_token_ttl_seconds"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    oauthClientsClientIdUnique: unique("oauth_clients_client_id_key").on(
+      table.clientId,
+    ),
+    oauthClientsStatusIdx: index("oauth_clients_status_idx").on(table.status),
+  }),
+);
+
+export const oauthClientSecrets = pgTable(
+  "oauth_client_secrets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientPkId: uuid("client_pk_id")
+      .notNull()
+      .references(() => oauthClients.id, { onDelete: "cascade" }),
+    secretHash: text("secret_hash").notNull(),
+    secretHint: varchar("secret_hint", { length: 16 }).notNull(),
+    isPrimary: boolean("is_primary").notNull().default(false),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    graceUntil: timestamp("grace_until", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    oauthClientSecretsClientPrimaryIdx: index(
+      "oauth_client_secrets_client_primary_idx",
+    ).on(table.clientPkId, table.isPrimary),
+    oauthClientSecretsClientRevokedIdx: index(
+      "oauth_client_secrets_client_revoked_idx",
+    ).on(table.clientPkId, table.revokedAt),
+  }),
+);
+
+export const oauthClientRedirectUris = pgTable(
+  "oauth_client_redirect_uris",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientPkId: uuid("client_pk_id")
+      .notNull()
+      .references(() => oauthClients.id, { onDelete: "cascade" }),
+    redirectUri: text("redirect_uri").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    oauthClientRedirectUrisUnique: unique(
+      "oauth_client_redirect_uris_client_uri_key",
+    ).on(table.clientPkId, table.redirectUri),
+  }),
+);
+
+export const oauthClientScopes = pgTable(
+  "oauth_client_scopes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientPkId: uuid("client_pk_id")
+      .notNull()
+      .references(() => oauthClients.id, { onDelete: "cascade" }),
+    scope: varchar("scope", { length: 128 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    oauthClientScopesUnique: unique("oauth_client_scopes_client_scope_key").on(
+      table.clientPkId,
+      table.scope,
+    ),
+  }),
+);
+
+export const oauthClientAuditLogs = pgTable(
+  "oauth_client_audit_logs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientPkId: uuid("client_pk_id").references(() => oauthClients.id, {
+      onDelete: "set null",
+    }),
+    actorUserId: uuid("actor_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    eventType: varchar("event_type", { length: 64 }).notNull(),
+    payload: jsonb("payload").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    oauthClientAuditLogsClientCreatedAtIdx: index(
+      "oauth_client_audit_logs_client_created_at_idx",
+    ).on(table.clientPkId, table.createdAt),
+  }),
+);

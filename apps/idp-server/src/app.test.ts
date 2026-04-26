@@ -30,6 +30,13 @@ describe("Global Routes", () => {
       rbacService: {
         authorizationCheck: vi.fn(),
       },
+      oauthClientService: {
+        authenticateClientBasic: vi
+          .fn()
+          .mockResolvedValue(
+            ok({ clientPkId: "c1", clientId: "client-id", status: "active" }),
+          ),
+      },
       webauthnService: {},
       configService: {},
       redis: {},

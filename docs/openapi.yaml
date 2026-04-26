@@ -610,6 +610,182 @@ components:
           minLength: 1
           maxLength: 20000
 
+    OAuthClient:
+      type: object
+      additionalProperties: false
+      required:
+        - clientId
+        - name
+        - clientType
+        - tokenEndpointAuthMethod
+        - status
+        - redirectUris
+        - allowedScopes
+      properties:
+        clientId:
+          type: string
+        name:
+          type: string
+        clientType:
+          type: string
+          enum: [confidential, public]
+        tokenEndpointAuthMethod:
+          type: string
+          enum: [client_secret_basic]
+        status:
+          type: string
+          enum: [active, disabled]
+        accessTokenTtlSeconds:
+          type: [integer, 'null']
+          minimum: 1
+        refreshTokenTtlSeconds:
+          type: [integer, 'null']
+          minimum: 1
+        redirectUris:
+          type: array
+          items:
+            type: string
+            format: uri
+        allowedScopes:
+          type: array
+          items:
+            type: string
+
+    OAuthClientListResponse:
+      type: object
+      additionalProperties: false
+      required: [clients]
+      properties:
+        clients:
+          type: array
+          items:
+            $ref: '#/components/schemas/OAuthClient'
+
+    OAuthClientCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [name, clientType, tokenEndpointAuthMethod, redirectUris, allowedScopes]
+      properties:
+        clientId:
+          type: string
+          minLength: 3
+          maxLength: 128
+        name:
+          type: string
+          minLength: 1
+          maxLength: 160
+        clientType:
+          type: string
+          enum: [confidential, public]
+        tokenEndpointAuthMethod:
+          type: string
+          enum: [client_secret_basic]
+        redirectUris:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            format: uri
+        allowedScopes:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+        accessTokenTtlSeconds:
+          type: integer
+          minimum: 1
+        refreshTokenTtlSeconds:
+          type: integer
+          minimum: 1
+
+    OAuthClientCreateResponse:
+      type: object
+      additionalProperties: false
+      required: [status, clientId, clientSecret, secretHint]
+      properties:
+        status:
+          type: string
+          enum: [created]
+        clientId:
+          type: string
+        clientSecret:
+          type: string
+        secretHint:
+          type: string
+
+    OAuthClientUpdateRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 160
+        status:
+          type: string
+          enum: [active, disabled]
+        redirectUris:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            format: uri
+        allowedScopes:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+        accessTokenTtlSeconds:
+          type: [integer, 'null']
+          minimum: 1
+        refreshTokenTtlSeconds:
+          type: [integer, 'null']
+          minimum: 1
+
+    OAuthClientStatusResponse:
+      type: object
+      additionalProperties: false
+      required: [status, clientId]
+      properties:
+        status:
+          type: string
+          enum: [updated]
+        clientId:
+          type: string
+
+    OAuthClientRotateSecretRequest:
+      type: object
+      additionalProperties: false
+      required: [gracePeriodDays]
+      properties:
+        gracePeriodDays:
+          type: integer
+          minimum: 0
+          maximum: 90
+
+    OAuthClientRotateSecretResponse:
+      type: object
+      additionalProperties: false
+      required: [status, clientId, clientSecret, secretHint, graceUntil]
+      properties:
+        status:
+          type: string
+          enum: [rotated]
+        clientId:
+          type: string
+        clientSecret:
+          type: string
+        secretHint:
+          type: string
+        graceUntil:
+          type: [string, 'null']
+          format: date-time
+
     Session:
       type: object
       additionalProperties: false
@@ -1854,6 +2030,256 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
           description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/admin/oauth/clients:
+    get:
+      tags: [auth-protected]
+      operationId: getV1AdminOauthClients
+      summary: List OAuth clients
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: OAuth clients
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthClientListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags: [auth-protected]
+      operationId: postV1AdminOauthClients
+      summary: Create OAuth client
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthClientCreateRequest'
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthClientCreateResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/admin/oauth/clients/{clientId}:
+    put:
+      tags: [auth-protected]
+      operationId: putV1AdminOauthClientsClientId
+      summary: Update OAuth client
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: clientId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthClientUpdateRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthClientStatusResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/admin/oauth/clients/{clientId}/rotate-secret:
+    post:
+      tags: [auth-protected]
+      operationId: postV1AdminOauthClientsClientIdRotateSecret
+      summary: Rotate OAuth client secret
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: clientId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthClientRotateSecretRequest'
+      responses:
+        '200':
+          description: Rotated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthClientRotateSecretResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/admin/oauth/clients/{clientId}/disable:
+    post:
+      tags: [auth-protected]
+      operationId: postV1AdminOauthClientsClientIdDisable
+      summary: Disable OAuth client
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: clientId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthClientStatusResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/admin/oauth/clients/{clientId}/enable:
+    post:
+      tags: [auth-protected]
+      operationId: postV1AdminOauthClientsClientIdEnable
+      summary: Enable OAuth client
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: clientId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthClientStatusResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
           content:
             application/json:
               schema:

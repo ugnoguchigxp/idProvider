@@ -188,6 +188,12 @@ pnpm dev
   - `PUT /v1/admin/configs/social-login/google`
   - `PUT /v1/admin/configs/notifications`
   - `PUT /v1/admin/configs/email-template`
+  - `GET /v1/admin/oauth/clients`
+  - `POST /v1/admin/oauth/clients`
+  - `PUT /v1/admin/oauth/clients/{clientId}`
+  - `POST /v1/admin/oauth/clients/{clientId}/rotate-secret`
+  - `POST /v1/admin/oauth/clients/{clientId}/disable`
+  - `POST /v1/admin/oauth/clients/{clientId}/enable`
 
 ## 管理 UI の使い方
 

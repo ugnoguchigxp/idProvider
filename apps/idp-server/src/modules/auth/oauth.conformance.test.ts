@@ -1,4 +1,4 @@
-import { ok } from "@idp/shared";
+import { ApiError, ok } from "@idp/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../../app.js";
 
@@ -35,6 +35,32 @@ describe("OAuth/OIDC conformance: oauth endpoints", () => {
       mfaRecoveryService: {},
       rbacService: {
         authorizationCheck: vi.fn(),
+      },
+      oauthClientService: {
+        authenticateClientBasic: vi
+          .fn()
+          .mockImplementation(async (authorization: string | undefined) => {
+            if (!authorization?.startsWith("Basic ")) {
+              throw new ApiError(
+                401,
+                "invalid_client",
+                "OAuth client authentication required",
+              );
+            }
+            const expected = `Basic ${Buffer.from("client:secret").toString("base64")}`;
+            if (authorization !== expected) {
+              throw new ApiError(
+                401,
+                "invalid_client",
+                "Invalid OAuth client credentials",
+              );
+            }
+            return ok({
+              clientPkId: "c1",
+              clientId: "client",
+              status: "active",
+            });
+          }),
       },
       webauthnService: {
         generateAuthenticationOptions: vi.fn(),

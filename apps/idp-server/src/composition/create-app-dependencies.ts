@@ -28,6 +28,7 @@ export const createAppDependencies = ({
   mfaService: services.mfaService,
   mfaRecoveryService: services.mfaRecoveryService,
   rbacService: services.rbacService,
+  oauthClientService: services.oauthClientService,
   webauthnService: services.webauthnService,
   configService: infrastructure.configService,
   auditRepository: repositories.auditRepository,

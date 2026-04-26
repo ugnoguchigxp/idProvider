@@ -17,11 +17,11 @@ import type pino from "pino";
 import { authenticatedEndpointAdapter } from "../../adapters/authenticated-endpoint-adapter.js";
 import { publicEndpointAdapter } from "../../adapters/public-endpoint-adapter.js";
 import type { AppEnv } from "../../config/env.js";
-import { assertOAuthClientAuth } from "../../core/oauth-client-auth.js";
 import type { RateLimiter } from "../../core/rate-limiter.js";
 import { createOpaqueToken } from "../../core/tokens.js";
 import { clearCookie, serializeCookie } from "../../utils/cookie.js";
 import { getIpAddress } from "../../utils/ip-address.js";
+import type { OAuthClientService } from "../oauth-clients/oauth-client.service.js";
 import type { AuthService } from "./auth.service.js";
 
 export type AuthRoutesDependencies = {
@@ -30,6 +30,7 @@ export type AuthRoutesDependencies = {
   configService: ConfigService;
   env: AppEnv;
   logger: pino.Logger;
+  oauthClientService: OAuthClientService;
 };
 
 export const createAuthRoutes = (deps: AuthRoutesDependencies) => {
@@ -201,10 +202,9 @@ export const createAuthRoutes = (deps: AuthRoutesDependencies) => {
             "Too many OAuth token requests",
           );
         }
-        assertOAuthClientAuth(c.req.header("authorization"), {
-          clientId: deps.env.OAUTH_CLIENT_ID,
-          clientSecret: deps.env.OAUTH_CLIENT_SECRET,
-        });
+        await deps.oauthClientService.authenticateClientBasic(
+          c.req.header("authorization"),
+        );
         const result = await deps.authService.refresh(payload.refreshToken);
         if (!result.ok) throw result.error;
         return toOAuthTokenResponse(result.value);
@@ -242,10 +242,9 @@ export const createAuthRoutes = (deps: AuthRoutesDependencies) => {
             "Too many OAuth introspection requests",
           );
         }
-        assertOAuthClientAuth(c.req.header("authorization"), {
-          clientId: deps.env.OAUTH_CLIENT_ID,
-          clientSecret: deps.env.OAUTH_CLIENT_SECRET,
-        });
+        await deps.oauthClientService.authenticateClientBasic(
+          c.req.header("authorization"),
+        );
         const result = await deps.authService.introspectToken(payload.token);
         if (!result.ok) throw result.error;
         return result.value;

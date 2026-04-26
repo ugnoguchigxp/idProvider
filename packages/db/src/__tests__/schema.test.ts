@@ -8,5 +8,7 @@ describe("db schema", () => {
     expect(schema.userProfiles).toBeDefined();
     expect(schema.mfaRecoveryCodes).toBeDefined();
     expect(schema.legalHolds).toBeDefined();
+    expect(schema.oauthClients).toBeDefined();
+    expect(schema.oauthClientSecrets).toBeDefined();
   });
 });

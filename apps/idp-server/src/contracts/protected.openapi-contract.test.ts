@@ -355,4 +355,59 @@ describe("OpenAPI contract: protected and admin", () => {
       path: "/v1/admin/configs",
     });
   });
+
+  it("GET /v1/admin/oauth/clients 200", async () => {
+    const res = await app.request("/v1/admin/oauth/clients", {
+      headers: authHeader,
+    });
+    expect(res.status).toBe(200);
+    await assertJsonResponseMatchesOpenApi(res, {
+      method: "get",
+      path: "/v1/admin/oauth/clients",
+    });
+  });
+
+  it("GET /v1/admin/oauth/clients 401", async () => {
+    const res = await app.request("/v1/admin/oauth/clients");
+    expect(res.status).toBe(401);
+    await assertJsonResponseMatchesOpenApi(res, {
+      method: "get",
+      path: "/v1/admin/oauth/clients",
+    });
+  });
+
+  it("POST /v1/admin/oauth/clients 200", async () => {
+    const res = await app.request("/v1/admin/oauth/clients", {
+      method: "POST",
+      headers: { ...authHeader, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "My Client",
+        clientType: "confidential",
+        tokenEndpointAuthMethod: "client_secret_basic",
+        redirectUris: ["https://example.com/callback"],
+        allowedScopes: ["openid"],
+      }),
+    });
+    expect(res.status).toBe(200);
+    await assertJsonResponseMatchesOpenApi(res, {
+      method: "post",
+      path: "/v1/admin/oauth/clients",
+    });
+  });
+
+  it("POST /v1/admin/oauth/clients/client_new/rotate-secret 200", async () => {
+    const res = await app.request(
+      "/v1/admin/oauth/clients/client_new/rotate-secret",
+      {
+        method: "POST",
+        headers: { ...authHeader, "Content-Type": "application/json" },
+        body: JSON.stringify({ gracePeriodDays: 7 }),
+      },
+    );
+    expect(res.status).toBe(200);
+    await assertJsonResponseMatchesOpenApi(res, {
+      method: "post",
+      path: "/v1/admin/oauth/clients/{clientId}/rotate-secret",
+    });
+  });
 });
