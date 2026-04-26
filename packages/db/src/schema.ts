@@ -606,3 +606,40 @@ export const oauthClientAuditLogs = pgTable(
     ).on(table.clientPkId, table.createdAt),
   }),
 );
+
+export const oidcProviderStates = pgTable(
+  "oidc_provider_states",
+  {
+    id: text("id").notNull(),
+    model: varchar("model", { length: 128 }).notNull(),
+    payload: jsonb("payload").notNull(),
+    grantId: text("grant_id"),
+    userCode: text("user_code"),
+    uid: text("uid"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    oidcProviderStatesModelIdUnique: unique(
+      "oidc_provider_states_model_id_key",
+    ).on(table.model, table.id),
+    oidcProviderStatesExpiresAtIdx: index(
+      "oidc_provider_states_expires_at_idx",
+    ).on(table.expiresAt),
+    oidcProviderStatesGrantIdIdx: index("oidc_provider_states_grant_id_idx").on(
+      table.grantId,
+    ),
+    oidcProviderStatesUidIdx: index("oidc_provider_states_uid_idx").on(
+      table.uid,
+    ),
+    oidcProviderStatesUserCodeIdx: index(
+      "oidc_provider_states_user_code_idx",
+    ).on(table.userCode),
+  }),
+);

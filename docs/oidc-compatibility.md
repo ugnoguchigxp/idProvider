@@ -6,6 +6,17 @@
 本ドキュメントは、実装済みのOIDC/OAuth仕様と未対応仕様を明示し、接続先アプリが事前に互換性判断できるようにする。
 
 ## 2. サポート範囲
+### 2.0 Endpoint 責務
+外部SSOの正規OIDC endpointは `OIDC_ISSUER` の discovery metadata が返す `oidc-provider` endpoint とする。
+
+- Authorization: `${OIDC_ISSUER}/auth`
+- Token: `${OIDC_ISSUER}/token`
+- UserInfo: `${OIDC_ISSUER}/me`
+- JWKS: `${OIDC_ISSUER}/jwks`
+- RP-Initiated Logout: `${OIDC_ISSUER}/session/end`
+
+Hono側の `/oauth/token`, `/oauth/introspection`, `/oauth/revocation` は既存 opaque token / `user_sessions` lifecycle の互換APIであり、BFF / API Gateway 向けSSOの code exchange endpoint ではない。
+
 ### 2.1 OIDC Discovery / Key Material
 - `GET /.well-known/openid-configuration` : Supported
 - `GET /.well-known/jwks.json` : Supported
@@ -20,7 +31,10 @@
 - Authorization Code flow: Supported
 - PKCE required: Supported (always required)
 - Client authentication (`client_secret_basic`): Supported
-- Static client registration: Supported（DB管理 / Admin API経由。旧環境変数フォールバックは移行期間中のみ）
+- Static client registration: Supported（DB管理 / Admin API経由。旧環境変数clientは移行期間中のフォールバック）
+- Production interaction: Supported（IdP側ログイン画面で認証し、redirect URIへauthorization codeを返す）
+- UserInfo endpoint: Supported
+- RP-Initiated Logout: Supported
 
 ## 3. Claims
 ### 3.1 Standard Claims
@@ -46,7 +60,9 @@
 - `token_endpoint_auth_method`: `client_secret_basic`
 - `grant_types`: `authorization_code`, `refresh_token`
 - `response_types`: `code`
-- `redirect_uris`: Admin API経由でクライアントごとにDBで管理
+- `redirect_uris`: Admin APIのDB client registryでclientごとに登録する
+- `allowedScopes`: `openid` を必須とし、`profile`, `email`, `offline_access`, `permissions`, `entitlements` など必要なscopeをclientごとに登録する
+- `client_secret`: 作成・ローテーション時だけ返却され、DBにはArgon2 hashのみ保存する。`oidc-provider` 側のdynamic client認証もこのhashで検証する
 
 ## 5. エラー/レート制限
 - OAuth endpoints は `401`（client認証失敗）を返す

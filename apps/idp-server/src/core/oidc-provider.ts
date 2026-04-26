@@ -1,5 +1,10 @@
-import { type Configuration, Provider } from "oidc-provider";
+import {
+  type AdapterFactory,
+  type Configuration,
+  Provider,
+} from "oidc-provider";
 import type { AppEnv } from "../config/env.js";
+import { verifyOidcClientSecretMetadata } from "./oidc-provider-adapter.js";
 
 export type OidcAccountResolver = {
   getMe: (userId: string) => Promise<{
@@ -64,6 +69,7 @@ export const createOidcProvider = (
   env: AppEnv,
   jwks: { keys: Record<string, unknown>[] },
   accountResolver: OidcAccountResolver,
+  adapter?: AdapterFactory,
 ): Provider => {
   const redirectUris =
     env.OIDC_CLIENT_REDIRECT_URIS?.length > 0
@@ -84,11 +90,40 @@ export const createOidcProvider = (
     pkce: {
       required: () => true,
     },
+    claims: {
+      openid: ["sub"],
+      email: ["email", "email_verified"],
+      profile: [
+        "name",
+        "given_name",
+        "family_name",
+        "preferred_username",
+        "locale",
+        "zoneinfo",
+        "updated_at",
+      ],
+      permissions: ["permissions"],
+      entitlements: ["entitlements"],
+    },
+    scopes: [
+      "openid",
+      "profile",
+      "email",
+      "offline_access",
+      "permissions",
+      "entitlements",
+    ],
+    interactions: {
+      url: async (_ctx, interaction) => `/interaction/${interaction.uid}`,
+    },
     features: {
       devInteractions: { enabled: env.NODE_ENV !== "production" },
       introspection: { enabled: true },
       revocation: { enabled: true },
+      rpInitiatedLogout: { enabled: true },
+      userinfo: { enabled: true },
     },
+    ...(adapter ? { adapter } : {}),
     findAccount: async (_ctx, sub) => {
       const me = await accountResolver.getMe(sub).catch(() => null);
       if (!me) {
@@ -103,5 +138,43 @@ export const createOidcProvider = (
     jwks,
   };
 
-  return new Provider(env.OIDC_ISSUER, configuration);
+  const provider = new Provider(env.OIDC_ISSUER, configuration);
+  installHashedClientSecretVerifier(provider);
+  return provider;
+};
+
+type ClientWithSecretMetadata = {
+  clientSecret?: string;
+  compareClientSecret(actual: string): boolean | Promise<boolean>;
+};
+
+type ProviderWithClientPrototype = Provider & {
+  Client?: {
+    prototype: ClientWithSecretMetadata;
+  };
+};
+
+const patchedClientPrototypes = new WeakSet<ClientWithSecretMetadata>();
+
+const installHashedClientSecretVerifier = (provider: Provider): void => {
+  const clientPrototype = (provider as ProviderWithClientPrototype).Client
+    ?.prototype;
+  if (!clientPrototype) {
+    return;
+  }
+  if (patchedClientPrototypes.has(clientPrototype)) {
+    return;
+  }
+
+  const originalCompareClientSecret = clientPrototype.compareClientSecret;
+  clientPrototype.compareClientSecret = async function compareClientSecret(
+    this: ClientWithSecretMetadata,
+    actual: string,
+  ) {
+    if (await verifyOidcClientSecretMetadata(actual, this.clientSecret)) {
+      return true;
+    }
+    return originalCompareClientSecret.call(this, actual);
+  };
+  patchedClientPrototypes.add(clientPrototype);
 };

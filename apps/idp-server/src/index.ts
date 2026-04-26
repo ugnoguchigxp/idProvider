@@ -3,7 +3,9 @@ import { serve } from "@hono/node-server";
 import { buildApp } from "./app.js";
 import { createRuntime } from "./composition/create-runtime.js";
 import { loadEnv } from "./config/env.js";
+import { attachOidcProductionInteractions } from "./core/oidc-interactions.js";
 import { createOidcProvider } from "./core/oidc-provider.js";
+import { createPostgresOidcProviderAdapterFactory } from "./core/oidc-provider-adapter.js";
 
 const bootstrap = async () => {
   const env = loadEnv(process.env);
@@ -11,6 +13,7 @@ const bootstrap = async () => {
   const {
     logger,
     keyStore,
+    db,
     redis,
     pool,
     services,
@@ -50,7 +53,11 @@ const bootstrap = async () => {
           services.rbacService,
         ),
     },
+    createPostgresOidcProviderAdapterFactory(db),
   );
+  attachOidcProductionInteractions(oidcProvider, {
+    authService: services.authService,
+  });
   const oidcServer = oidcProvider.listen(env.OIDC_PORT, () => {
     logger.info(
       { event: "oidc.started", port: env.OIDC_PORT, issuer: env.OIDC_ISSUER },

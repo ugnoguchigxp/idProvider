@@ -27,6 +27,7 @@
     "verify:build": "pnpm build",
     "verify:openapi": "pnpm --package=@redocly/cli dlx redocly lint docs/openapi.yaml",
     "verify:oidc-conformance": "bash ./scripts/verify-oidc-conformance.sh",
+    "verify:sso-e2e": "bash ./scripts/verify-sso-e2e.sh",
     "verify:contract": "pnpm --filter @idp/idp-server test:contract",
     "verify:security": "pnpm audit --audit-level=high",
     "retention:run": "pnpm --filter @idp/idp-server retention:run",

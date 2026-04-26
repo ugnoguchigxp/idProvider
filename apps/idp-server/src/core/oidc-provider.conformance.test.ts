@@ -43,6 +43,14 @@ describe("OIDC conformance: provider configuration", () => {
     const [, configuration] = providerSpy.mock.calls[0] as [string, any];
 
     expect(configuration.pkce.required({}, {})).toBe(true);
+    expect(configuration.scopes).toEqual([
+      "openid",
+      "profile",
+      "email",
+      "offline_access",
+      "permissions",
+      "entitlements",
+    ]);
     expect(configuration.clients).toEqual([
       expect.objectContaining({
         client_id: "client-id",
@@ -102,5 +110,25 @@ describe("OIDC conformance: provider configuration", () => {
     const [, testConfig] = providerSpy.mock.calls[1] as [string, any];
     expect(productionConfig.features.devInteractions.enabled).toBe(false);
     expect(testConfig.features.devInteractions.enabled).toBe(true);
+  });
+
+  it("uses a provided persistent adapter", () => {
+    const adapter = vi.fn();
+
+    createOidcProvider(
+      {
+        OAUTH_CLIENT_ID: "client-id",
+        OAUTH_CLIENT_SECRET: "client-secret",
+        OIDC_ISSUER: "https://issuer.example.com",
+        OIDC_CLIENT_REDIRECT_URIS: ["https://app.example.com/callback"],
+        NODE_ENV: "production",
+      } as any,
+      { keys: [{ kty: "RSA", kid: "k1", use: "sig" }] as any },
+      accountResolver,
+      adapter,
+    );
+
+    const [, configuration] = providerSpy.mock.calls[0] as [string, any];
+    expect(configuration.adapter).toBe(adapter);
   });
 });
