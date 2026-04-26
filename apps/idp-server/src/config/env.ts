@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { APP_CONSTANTS } from "./constants.js";
 
 const envBoolean = (defaultValue: boolean) =>
   z
@@ -44,100 +45,15 @@ const envSchema = z
           .filter((v) => v.length > 0),
       )
       .pipe(z.array(z.string().url()).min(1)),
-    ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
-    REFRESH_TOKEN_TTL_SECONDS: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(2_592_000),
-    ARGON2_MEMORY_COST: z.coerce.number().int().min(4096).default(19456),
-    ARGON2_TIME_COST: z.coerce.number().int().min(1).default(2),
-    ARGON2_PARALLELISM: z.coerce.number().int().min(1).default(1),
-    RATE_LIMIT_SIGNUP_PER_MIN: z.coerce.number().int().min(1).default(10),
-    RATE_LIMIT_LOGIN_PER_MIN: z.coerce.number().int().min(1).default(20),
-    RATE_LIMIT_OAUTH_PER_MIN: z.coerce.number().int().min(1).default(60),
-    RATE_LIMIT_DISCOVERY_PER_MIN: z.coerce.number().int().min(1).default(120),
-    MFA_ISSUER: z.string().min(1).default("gxp-idProvider"),
-    JWKS_ROTATION_INTERVAL_HOURS: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(720),
-    JWKS_GRACE_PERIOD_HOURS: z.coerce.number().int().positive().default(72),
-    RETENTION_AUDIT_LOG_ANONYMIZE_DAYS: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(365),
-    RETENTION_AUDIT_LOG_DELETE_DAYS: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(2555),
-    RETENTION_SECURITY_EVENT_ANONYMIZE_DAYS: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(90),
-    RETENTION_SECURITY_EVENT_DELETE_DAYS: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(365),
-    RETENTION_SESSION_ANONYMIZE_DAYS: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(30),
-    RETENTION_SESSION_DELETE_DAYS: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(90),
-    RETENTION_BATCH_CHUNK_SIZE: z.coerce.number().int().positive().default(500),
-    RETENTION_JOB_LOCK_KEY: z.coerce.number().int().default(91_000_101),
     RETENTION_JOB_ENABLED: envBoolean(true),
-    ACCOUNT_DELETION_GRACE_DAYS: z.coerce
-      .number()
-      .int()
-      .nonnegative()
-      .default(30),
-    ACCOUNT_DELETION_JOB_LOCK_KEY: z.coerce.number().int().default(91_000_102),
     ACCOUNT_DELETION_JOB_ENABLED: envBoolean(true),
-    RATE_LIMIT_ACCOUNT_DELETE_PER_HOUR: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(3),
-    RATE_LIMIT_PROFILE_UPDATE_PER_10_MIN: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(30),
     MFA_RECOVERY_CODE_PEPPER: z
       .string()
       .min(16)
       .default("dev-mfa-recovery-pepper"),
-    MFA_RECOVERY_CODE_COUNT: z.coerce.number().int().positive().default(10),
-    MFA_RECOVERY_CODE_LENGTH: z.coerce.number().int().min(20).default(20),
-    RATE_LIMIT_MFA_RECOVERY_PER_MIN: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(5),
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
-    ADMIN_SOD_ENFORCED: envBoolean(false),
     METRICS_ENABLED: envBoolean(true),
     METRICS_BEARER_TOKEN: z.string().default(""),
-    RBAC_CACHE_ENABLED: envBoolean(false),
-    RBAC_CACHE_PERCENT: z.coerce.number().int().min(0).max(100).default(0),
-    RBAC_CACHE_AUTH_TTL_SECONDS: z.coerce.number().int().positive().default(30),
-    RBAC_CACHE_ENT_TTL_SECONDS: z.coerce.number().int().positive().default(60),
-    RBAC_CACHE_NEGATIVE_TTL_SECONDS: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(15),
     TURNSTILE_ENABLED: envBoolean(false),
     TURNSTILE_SECRET_KEY: z.string().default(""),
     TURNSTILE_SITE_KEY: z.string().default(""),
@@ -161,35 +77,6 @@ const envSchema = z
       .enum(["off", "risk", "always"])
       .default("risk"),
     TURNSTILE_EXPECTED_HOSTNAME: z.string().default(""),
-    BOT_RISK_WINDOW_SECONDS: z.coerce.number().int().positive().default(600),
-    BOT_RISK_LOGIN_THRESHOLD_PER_WINDOW: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(20),
-    BOT_RISK_MEDIUM_WATERMARK_PERCENT: z.coerce
-      .number()
-      .int()
-      .min(1)
-      .max(100)
-      .default(20),
-    ADAPTIVE_MFA_ENABLED: envBoolean(false),
-    ADAPTIVE_MFA_REQUIRE_FOR_MEDIUM: envBoolean(true),
-    ADAPTIVE_MFA_IP_FAILURE_WINDOW_SECONDS: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(900),
-    ADAPTIVE_MFA_IP_FAILURE_HIGH_THRESHOLD: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(20),
-    ADAPTIVE_MFA_IMPOSSIBLE_TRAVEL_WINDOW_MINUTES: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(30),
     ADAPTIVE_MFA_HIGH_RISK_IPS: z
       .string()
       .default("")
@@ -257,7 +144,6 @@ const envSchema = z
         path: ["TURNSTILE_SECRET_KEY"],
       });
     }
-
     if (env.TURNSTILE_ENABLED && env.TURNSTILE_SITE_KEY.trim().length === 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -265,44 +151,9 @@ const envSchema = z
         path: ["TURNSTILE_SITE_KEY"],
       });
     }
-
-    if (
-      env.RETENTION_AUDIT_LOG_ANONYMIZE_DAYS >
-      env.RETENTION_AUDIT_LOG_DELETE_DAYS
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message:
-          "RETENTION_AUDIT_LOG_ANONYMIZE_DAYS must be <= RETENTION_AUDIT_LOG_DELETE_DAYS",
-        path: ["RETENTION_AUDIT_LOG_ANONYMIZE_DAYS"],
-      });
-    }
-
-    if (
-      env.RETENTION_SECURITY_EVENT_ANONYMIZE_DAYS >
-      env.RETENTION_SECURITY_EVENT_DELETE_DAYS
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message:
-          "RETENTION_SECURITY_EVENT_ANONYMIZE_DAYS must be <= RETENTION_SECURITY_EVENT_DELETE_DAYS",
-        path: ["RETENTION_SECURITY_EVENT_ANONYMIZE_DAYS"],
-      });
-    }
-
-    if (
-      env.RETENTION_SESSION_ANONYMIZE_DAYS > env.RETENTION_SESSION_DELETE_DAYS
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message:
-          "RETENTION_SESSION_ANONYMIZE_DAYS must be <= RETENTION_SESSION_DELETE_DAYS",
-        path: ["RETENTION_SESSION_ANONYMIZE_DAYS"],
-      });
-    }
   });
 
-export type AppEnv = z.infer<typeof envSchema>;
+export type AppEnv = z.infer<typeof envSchema> & typeof APP_CONSTANTS;
 
 export const loadEnv = (rawEnv: Record<string, string | undefined>): AppEnv => {
   const parsed = envSchema.safeParse(rawEnv);
@@ -312,5 +163,5 @@ export const loadEnv = (rawEnv: Record<string, string | undefined>): AppEnv => {
       .join(", ");
     throw new Error(`Invalid environment variables: ${message}`);
   }
-  return parsed.data;
+  return { ...APP_CONSTANTS, ...parsed.data };
 };

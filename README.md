@@ -3,6 +3,13 @@
 TypeScript で構築した Identity Provider (IdP) モノレポです。  
 Hono ベースの API と `oidc-provider` を組み合わせ、OIDC/OAuth2、認証、認可、監査、運用バッチを一貫して提供します。
 
+## Quickstart
+
+- 30分でローカル起動: [`docs/quickstart/01-local-30min.md`](docs/quickstart/01-local-30min.md)
+- 1日PoC導線: [`docs/quickstart/02-poc-1day.md`](docs/quickstart/02-poc-1day.md)
+- 監視導入の最小手順: [`docs/quickstart/03-observability-bootstrap.md`](docs/quickstart/03-observability-bootstrap.md)
+- 全体像: [`docs/quickstart/00-overview.md`](docs/quickstart/00-overview.md)
+
 ## 概要
 
 - ランタイム: Node.js 24 LTS
@@ -95,7 +102,48 @@ Hono ベースの API と `oidc-provider` を組み合わせ、OIDC/OAuth2、認
 - pnpm `>= 10`
 - Docker / Docker Compose
 
-## セットアップ
+## セットアップ（clone から起動まで）
+
+### 1. リポジトリ取得
+
+```bash
+git clone <REPOSITORY_URL>
+cd gxp-idProvider
+```
+
+### 2. 最短セットアップ（推奨）
+
+```bash
+pnpm bootstrap:local
+```
+
+このコマンドは以下を一括で実行します。
+
+- `.env` 作成（未作成時）
+- 依存インストール
+- Docker stack 起動
+- DB migrate / seed
+- API / OIDC のヘルスチェック
+
+成功時の期待結果:
+
+- `bootstrap completed` が表示される
+- `http://localhost:3000/healthz` が `200`
+- `http://localhost:3001/.well-known/openid-configuration` が `200`
+
+### 3. アプリ起動
+
+```bash
+pnpm dev
+```
+
+起動後:
+
+- API: `http://localhost:3000`
+- OIDC issuer: `http://localhost:3001`
+- Admin UI: `http://localhost:5173` (`pnpm dev:admin` 実行時)
+
+### 4. 手動セットアップ（詳細確認したい場合）
 
 ```bash
 pnpm install
@@ -106,11 +154,45 @@ pnpm db:seed
 pnpm dev
 ```
 
-起動後:
+### 5. 稼働確認コマンド
 
-- API: `http://localhost:3000`
-- OIDC issuer: `http://localhost:3001`
-- Admin UI: `http://localhost:5173` (`pnpm dev:admin` 実行時)
+```bash
+curl -i http://localhost:3000/healthz
+curl -i http://localhost:3000/readyz
+curl -s http://localhost:3001/.well-known/openid-configuration
+```
+
+ログイン疎通:
+
+```bash
+curl -i -X POST http://localhost:3000/v1/login \
+  -H 'content-type: application/json' \
+  -d '{"email":"user@example.com","password":"Password123!"}'
+```
+
+期待結果:
+
+- HTTP `200`
+- `accessToken` と `refreshToken` を含む JSON
+
+### 6. 初期シード情報
+
+- ユーザー
+  - `admin@example.com` / `Password123!`
+  - `sysadmin@example.com` / `Password123!`
+  - `support@example.com` / `Password123!`
+  - `auditor@example.com` / `Password123!`
+  - `user@example.com` / `Password123!`
+- OAuth クライアント（`.env` 既定値）
+  - `client_id`: `local-client`
+  - `client_secret`: `local-client-secret`
+  - `redirect_uri`: `http://localhost:5173/callback`
+
+### 7. 停止
+
+```bash
+pnpm stack:down
+```
 
 ## 環境変数
 
@@ -157,6 +239,7 @@ pnpm dev
 
 補足:
 
+- ローカルDocker既定ポートは `postgres:55432`, `redis:56379` です（`.env.example` 反映済み）。
 - 本番環境では `JWT_PRIVATE_KEY` に開発用値を使えないようにバリデーションしています。
 - retention 系は `ANONYMIZE_DAYS <= DELETE_DAYS` の整合性チェックがあります。
 - 本番環境で `METRICS_ENABLED=true` の場合、`METRICS_BEARER_TOKEN` 必須です。
@@ -254,8 +337,10 @@ pnpm retention:run
 - `pnpm lint`: Biome lint
 - `pnpm format`: Biome format
 - `pnpm db:migrate`: DB マイグレーション
+- `pnpm db:seed`: seed データ投入
 - `pnpm stack:up`: ローカル依存起動
 - `pnpm stack:down`: ローカル依存停止
+- `pnpm bootstrap:local`: clone直後向けの一括セットアップ
 
 ## 品質ゲート (`verify`)
 
@@ -278,6 +363,7 @@ pnpm verify
 - `pnpm verify:contract` (`apps/idp-server` の OpenAPI 契約テストのみ実行)
 - `pnpm verify:oidc-conformance` (OIDC/OAuth conformance focused test + OpenAPI lint)
 - `pnpm verify:example-bff-e2e` (`apps/example-bff` の統合E2E)
+- `pnpm verify:quickstart` (Quickstart 手順の再現性チェック)
 
 ## ドキュメント
 
@@ -286,6 +372,10 @@ pnpm verify
 - Google連携設計: [`docs/google-federation.md`](docs/google-federation.md)
 - OIDC Client 契約: [`docs/oidc-client.md`](docs/oidc-client.md)
 - OIDC互換マトリクス: [`docs/oidc-compatibility.md`](docs/oidc-compatibility.md)
+- Quickstart Overview: [`docs/quickstart/00-overview.md`](docs/quickstart/00-overview.md)
+- Quickstart Local 30min: [`docs/quickstart/01-local-30min.md`](docs/quickstart/01-local-30min.md)
+- Quickstart 1day PoC: [`docs/quickstart/02-poc-1day.md`](docs/quickstart/02-poc-1day.md)
+- Quickstart Observability: [`docs/quickstart/03-observability-bootstrap.md`](docs/quickstart/03-observability-bootstrap.md)
 - SDKサンプル (Node): [`docs/samples/sdk-node-example.md`](docs/samples/sdk-node-example.md)
 - SDKサンプル (Kotlin): [`docs/samples/sdk-kotlin-example.md`](docs/samples/sdk-kotlin-example.md)
 - SDKサンプル (Swift): [`docs/samples/sdk-swift-example.md`](docs/samples/sdk-swift-example.md)

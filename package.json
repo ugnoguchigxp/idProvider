@@ -15,8 +15,9 @@
   },
   "scripts": {
     "build": "pnpm -r build",
-    "dev": "pnpm --filter @idp/idp-server dev",
+    "dev": "bash ./scripts/dev-server.sh",
     "dev:admin": "pnpm --filter @idp/admin-ui dev",
+    "bootstrap:local": "bash ./scripts/bootstrap-local.sh",
     "test": "pnpm -r test",
     "lint": "biome check --error-on-warnings .",
     "format": "biome check --write .",
@@ -34,9 +35,10 @@
     "retention:run": "pnpm --filter @idp/idp-server retention:run",
     "retention:dry-run": "pnpm --filter @idp/idp-server retention:dry-run",
     "db:migrate": "bash ./scripts/migrate.sh",
-    "db:seed": "pnpm --filter @idp/idp-server db:seed",
+    "db:seed": "bash ./scripts/seed.sh",
     "stack:up": "docker compose -f infra/docker-compose.yml up -d",
     "stack:down": "docker compose -f infra/docker-compose.yml down",
+    "verify:quickstart": "bash ./scripts/verify-quickstart.sh",
     "prepare": "husky"
   },
   "devDependencies": {
