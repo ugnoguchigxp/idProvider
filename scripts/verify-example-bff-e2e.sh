@@ -169,7 +169,7 @@ OIDC_ISSUER="${OIDC_ISSUER}" BFF_BASE_URL="${BFF_BASE_URL}" node <<'NODE'
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         email: "user@example.com",
-        password: "Password123!",
+        password: "Gxp#Idp!2026$Secure",
       }),
     });
     if (callback.response.status !== 200 || callback.current.toString() !== `${bffBaseUrl}/`) {

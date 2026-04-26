@@ -42,7 +42,7 @@ curl -s http://localhost:3001/.well-known/openid-configuration
 ```bash
 curl -i -X POST http://localhost:3000/v1/login \
   -H 'content-type: application/json' \
-  -d '{"email":"user@example.com","password":"Password123!"}'
+  -d '{"email":"user@example.com","password":"Gxp#Idp!2026$Secure"}'
 ```
 
 期待結果:
@@ -51,11 +51,11 @@ curl -i -X POST http://localhost:3000/v1/login \
 
 ## 5. 初期データ（seed）
 - ユーザー
-  - `admin@example.com` / `Password123!`
-  - `sysadmin@example.com` / `Password123!`
-  - `support@example.com` / `Password123!`
-  - `auditor@example.com` / `Password123!`
-  - `user@example.com` / `Password123!`
+  - `admin@example.com` / `Gxp#Idp!2026$Secure`
+  - `sysadmin@example.com` / `Gxp#Idp!2026$Secure`
+  - `support@example.com` / `Gxp#Idp!2026$Secure`
+  - `auditor@example.com` / `Gxp#Idp!2026$Secure`
+  - `user@example.com` / `Gxp#Idp!2026$Secure`
 - OAuthクライアント（`.env`既定値）
   - `client_id`: `local-client`
   - `client_secret`: `local-client-secret`

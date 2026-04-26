@@ -1,8 +1,10 @@
 import { ok } from "@idp/shared";
+import type { RBACService } from "../rbac/rbac.service.js";
 import type { SessionRepository } from "./session.repository.js";
 
 export type SessionServiceDependencies = {
   sessionRepository: SessionRepository;
+  rbacService?: Pick<RBACService, "invalidateUserCache">;
 };
 
 export class SessionService {
@@ -17,12 +19,14 @@ export class SessionService {
     const session = await this.deps.sessionRepository.findById(sessionId);
     if (session && session.userId === userId) {
       await this.deps.sessionRepository.revoke(sessionId);
+      await this.deps.rbacService?.invalidateUserCache(userId);
     }
     return ok({ status: "revoked", sessionId });
   }
 
   async revokeAllSessions(userId: string) {
     await this.deps.sessionRepository.revokeAllByUserId(userId);
+    await this.deps.rbacService?.invalidateUserCache(userId);
     return ok({ status: "revoked_all" });
   }
 }

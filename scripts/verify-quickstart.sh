@@ -66,7 +66,7 @@ wait_for_http "${OIDC_ISSUER:-http://localhost:3001}/.well-known/openid-configur
 step "run synthetic login check"
 SYNTHETIC_BASE_URL="http://localhost:${PORT:-3000}" \
 SYNTHETIC_LOGIN_EMAIL="user@example.com" \
-SYNTHETIC_LOGIN_PASSWORD="Password123!" \
+SYNTHETIC_LOGIN_PASSWORD="Gxp#Idp!2026$Secure" \
 pnpm --filter @idp/idp-server synthetic:check
 
 step "quickstart verification completed"

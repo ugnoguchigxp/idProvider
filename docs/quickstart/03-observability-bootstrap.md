@@ -15,7 +15,7 @@
 ```bash
 SYNTHETIC_BASE_URL=http://localhost:3000 \
 SYNTHETIC_LOGIN_EMAIL=user@example.com \
-SYNTHETIC_LOGIN_PASSWORD=Password123! \
+SYNTHETIC_LOGIN_PASSWORD=Gxp#Idp!2026$Secure \
 pnpm --filter @idp/idp-server synthetic:check
 ```
 

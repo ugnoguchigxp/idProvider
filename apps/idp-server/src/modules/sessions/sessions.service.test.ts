@@ -13,6 +13,9 @@ describe("SessionService", () => {
         revokeAllByUserId: vi.fn(),
         findById: vi.fn(),
       },
+      rbacService: {
+        invalidateUserCache: vi.fn().mockResolvedValue(undefined),
+      },
       logger: {
         info: vi.fn(),
         error: vi.fn(),
@@ -57,6 +60,7 @@ describe("SessionService", () => {
         expect(result.value.sessionId).toBe("s1");
       }
       expect(deps.sessionRepository.revoke).toHaveBeenCalledWith("s1");
+      expect(deps.rbacService.invalidateUserCache).toHaveBeenCalledWith("u1");
     });
 
     it("should not revoke a session if it does not belong to the user", async () => {
@@ -68,6 +72,7 @@ describe("SessionService", () => {
       const result = await sessionService.revokeSession("u1", "s1");
       expect(result.ok).toBe(true);
       expect(deps.sessionRepository.revoke).not.toHaveBeenCalled();
+      expect(deps.rbacService.invalidateUserCache).not.toHaveBeenCalled();
     });
   });
 
@@ -78,6 +83,7 @@ describe("SessionService", () => {
       expect(deps.sessionRepository.revokeAllByUserId).toHaveBeenCalledWith(
         "u1",
       );
+      expect(deps.rbacService.invalidateUserCache).toHaveBeenCalledWith("u1");
     });
   });
 });

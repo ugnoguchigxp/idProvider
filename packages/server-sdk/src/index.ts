@@ -83,6 +83,30 @@ type Jwks = {
   keys: Array<JsonWebKey & { kid?: string }>;
 };
 
+export type JwtVerifierOptions = {
+  issuer: string;
+  audience: string;
+  jwksUri?: string;
+  timeoutMs?: number;
+  clockSkewSeconds?: number;
+  fetch?: typeof fetch;
+};
+
+export type VerifyAccessTokenInput = {
+  requiredScopes?: string[];
+};
+
+export type VerifiedServiceAccessToken = {
+  claims: Record<string, unknown>;
+  scope: string[];
+  sub?: string;
+  clientId?: string;
+};
+
+export type ServiceAuthMiddlewareOptions = JwtVerifierOptions & {
+  requiredScopes?: string[];
+};
+
 export class ServerSdkError extends Error {
   constructor(
     readonly code: string,
@@ -562,6 +586,221 @@ export class ServerSdkClient {
 
 export const createServerSdkClient = (options: ServerSdkOptions) =>
   new ServerSdkClient(options);
+
+class JwtVerifier {
+  private discoveryCache?: DiscoveryDocument;
+  private jwksCache?: Jwks;
+  private readonly fetchImpl: typeof fetch;
+  private readonly timeoutMs: number;
+  private readonly clockSkewSeconds: number;
+
+  constructor(private readonly options: JwtVerifierOptions) {
+    this.fetchImpl = options.fetch ?? fetch;
+    this.timeoutMs = options.timeoutMs ?? 3000;
+    this.clockSkewSeconds = options.clockSkewSeconds ?? 30;
+  }
+
+  async verifyAccessToken(
+    token: string,
+    input: VerifyAccessTokenInput = {},
+  ): Promise<VerifiedServiceAccessToken> {
+    if (!token) {
+      throw new ServerSdkError("missing_token", "Access token is required");
+    }
+
+    const [encodedHeader, encodedPayload, encodedSignature] = token.split(".");
+    if (!encodedHeader || !encodedPayload || !encodedSignature) {
+      throw new ServerSdkError("invalid_token", "Invalid access token format");
+    }
+
+    const header = this.decodeJwtPart(encodedHeader);
+    const claims = this.decodeJwtPart(encodedPayload);
+
+    if (header.alg !== "RS256" || typeof header.kid !== "string") {
+      throw new ServerSdkError("invalid_token", "Unsupported token algorithm");
+    }
+
+    const jwks = await this.getJwks();
+    const jwk = jwks.keys.find((key) => key.kid === header.kid);
+    if (!jwk) {
+      throw new ServerSdkError("invalid_token", "Signing key not found");
+    }
+
+    const signatureValid = verify(
+      "RSA-SHA256",
+      Buffer.from(`${encodedHeader}.${encodedPayload}`),
+      createPublicKey({ key: jwk, format: "jwk" }),
+      base64UrlToBuffer(encodedSignature),
+    );
+    if (!signatureValid) {
+      throw new ServerSdkError("invalid_token", "Invalid token signature");
+    }
+
+    this.validateClaims(claims);
+
+    const scope = this.normalizeScope(claims);
+    const requiredScopes = input.requiredScopes ?? [];
+    if (requiredScopes.length > 0) {
+      const missing = requiredScopes.filter(
+        (required) => !scope.includes(required),
+      );
+      if (missing.length > 0) {
+        throw new ServerSdkError(
+          "insufficient_scope",
+          `Missing required scopes: ${missing.join(", ")}`,
+        );
+      }
+    }
+
+    const verifiedToken: VerifiedServiceAccessToken = {
+      claims,
+      scope,
+    };
+    if (typeof claims.sub === "string") {
+      verifiedToken.sub = claims.sub;
+    }
+    if (typeof claims.client_id === "string") {
+      verifiedToken.clientId = claims.client_id;
+    } else if (typeof claims.azp === "string") {
+      verifiedToken.clientId = claims.azp;
+    }
+    return verifiedToken;
+  }
+
+  private decodeJwtPart(value: string): Record<string, unknown> {
+    try {
+      return JSON.parse(base64UrlToBuffer(value).toString("utf8"));
+    } catch (_error) {
+      throw new ServerSdkError("invalid_token", "Invalid token JSON");
+    }
+  }
+
+  private validateClaims(claims: Record<string, unknown>) {
+    const now = Math.floor(Date.now() / 1000);
+
+    if (claims.iss !== this.options.issuer) {
+      throw new ServerSdkError("invalid_token", "Invalid issuer");
+    }
+
+    const audience = claims.aud;
+    const audienceMatches =
+      audience === this.options.audience ||
+      (Array.isArray(audience) && audience.includes(this.options.audience));
+    if (!audienceMatches) {
+      throw new ServerSdkError("invalid_token", "Invalid audience");
+    }
+
+    if (typeof claims.exp !== "number") {
+      throw new ServerSdkError("invalid_token", "Missing exp claim");
+    }
+    if (claims.exp <= now - this.clockSkewSeconds) {
+      throw new ServerSdkError("token_expired", "Access token is expired");
+    }
+
+    if (
+      typeof claims.nbf === "number" &&
+      claims.nbf > now + this.clockSkewSeconds
+    ) {
+      throw new ServerSdkError("invalid_token", "Token is not active yet");
+    }
+
+    if (
+      typeof claims.iat === "number" &&
+      claims.iat > now + this.clockSkewSeconds
+    ) {
+      throw new ServerSdkError("invalid_token", "Token issued-at is invalid");
+    }
+  }
+
+  private normalizeScope(claims: Record<string, unknown>): string[] {
+    if (typeof claims.scope === "string") {
+      return claims.scope
+        .split(" ")
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0);
+    }
+    if (Array.isArray(claims.scp)) {
+      return claims.scp.filter(
+        (value): value is string => typeof value === "string",
+      );
+    }
+    return [];
+  }
+
+  private async getDiscovery(): Promise<DiscoveryDocument> {
+    if (!this.discoveryCache) {
+      const issuer = this.options.issuer.replace(/\/$/, "");
+      this.discoveryCache = (await this.requestJson(
+        `${issuer}/.well-known/openid-configuration`,
+      )) as DiscoveryDocument;
+    }
+    return this.discoveryCache;
+  }
+
+  private async getJwks(): Promise<Jwks> {
+    if (!this.jwksCache) {
+      if (this.options.jwksUri) {
+        this.jwksCache = (await this.requestJson(this.options.jwksUri)) as Jwks;
+      } else {
+        const discovery = await this.getDiscovery();
+        this.jwksCache = (await this.requestJson(discovery.jwks_uri)) as Jwks;
+      }
+    }
+    return this.jwksCache;
+  }
+
+  private async requestJson(url: string): Promise<Record<string, unknown>> {
+    return withTimeout(this.timeoutMs, async (signal) => {
+      const response = await this.fetchImpl(url, { signal });
+      if (!response.ok) {
+        throw new ServerSdkError(
+          response.status === 429 ? "oidc_rate_limited" : "oidc_http_error",
+          `OIDC request failed with status ${response.status}`,
+          response.status === 429 || response.status >= 500,
+        );
+      }
+      return response.json() as Promise<Record<string, unknown>>;
+    });
+  }
+}
+
+export const createJwtVerifier = (options: JwtVerifierOptions) =>
+  new JwtVerifier(options);
+
+const readAuthorizationHeader = (
+  headers: Headers | Record<string, string | undefined>,
+): string | undefined => {
+  if (headers instanceof Headers) {
+    return headers.get("authorization") ?? undefined;
+  }
+  return headers.authorization ?? headers.Authorization;
+};
+
+export const createAuthMiddleware = (options: ServiceAuthMiddlewareOptions) => {
+  const verifier = createJwtVerifier(options);
+  return {
+    async authorize(
+      headers: Headers | Record<string, string | undefined>,
+      input: VerifyAccessTokenInput = {},
+    ): Promise<VerifiedServiceAccessToken> {
+      const authorizationHeader = readAuthorizationHeader(headers);
+      if (!authorizationHeader) {
+        throw new ServerSdkError(
+          "missing_token",
+          "Authorization header is required",
+        );
+      }
+      const [scheme, token] = authorizationHeader.split(" ");
+      if (scheme?.toLowerCase() !== "bearer" || !token) {
+        throw new ServerSdkError("missing_token", "Bearer token is required");
+      }
+
+      const requiredScopes =
+        input.requiredScopes ?? options.requiredScopes ?? [];
+      return verifier.verifyAccessToken(token, { requiredScopes });
+    },
+  };
+};
 
 const hasValidAccessTokenResponse = (
   response: Record<string, unknown>,

@@ -84,6 +84,7 @@ export const createServices = ({
 
   const sessionService = new SessionService({
     sessionRepository: repositories.sessionRepository,
+    rbacService,
   });
 
   const accountDeletionService = new AccountDeletionService({

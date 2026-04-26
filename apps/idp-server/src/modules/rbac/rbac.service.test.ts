@@ -132,4 +132,19 @@ describe("RBACService", () => {
       expect(repository.findEntitlement).not.toHaveBeenCalled();
     });
   });
+
+  describe("cache invalidation", () => {
+    it("invalidates auth and entitlement cache by user id", async () => {
+      await service.invalidateUserCache("u1");
+
+      expect(cache.deleteByPrefix).toHaveBeenCalledWith("rbac:v1:auth:u1");
+      expect(cache.deleteByPrefix).toHaveBeenCalledWith("rbac:v1:ent:u1");
+    });
+
+    it("invalidates all rbac cache", async () => {
+      await service.invalidateAllCache();
+
+      expect(cache.deleteByPrefix).toHaveBeenCalledWith("rbac:v1:");
+    });
+  });
 });

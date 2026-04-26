@@ -36,6 +36,40 @@
 - Severity: Critical
 - Runbook: `RB-BOT-MITIGATION`
 
+### AL-007: Authorization deny ratio spike
+- Condition: deny ratio > `0.10` over 5m
+- PromQL:
+```promql
+sum(rate(idp_rbac_authorization_decision_total{result="denied"}[5m]))
+/
+clamp_min(sum(rate(idp_rbac_authorization_decision_total[5m])), 1)
+```
+- Severity: High
+- Runbook: `RB-ADMIN-CONFIG`
+
+### AL-008: Authorization latency regression
+- Condition: `authorization/check` p95 > `0.2s` over 10m
+- PromQL:
+```promql
+histogram_quantile(
+  0.95,
+  sum by (le) (
+    rate(idp_http_request_duration_seconds_bucket{route="/v1/authorization/check"}[10m])
+  )
+) > 0.2
+```
+- Severity: High
+- Runbook: `docs/runbooks/rbac-cache-performance.md`
+
+### AL-009: RBAC cache invalidation errors
+- Condition: any invalidation error over 5m
+- PromQL:
+```promql
+sum(increase(idp_rbac_cache_invalidation_total{result="error"}[5m])) > 0
+```
+- Severity: Critical
+- Runbook: `docs/runbooks/rbac-cache-performance.md`
+
 ## 3. 運用ルール
 - Criticalは即時ページング
 - Highは5分以内に一次確認

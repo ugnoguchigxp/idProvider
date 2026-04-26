@@ -211,7 +211,7 @@ OIDC_ISSUER="${OIDC_ISSUER}" COOKIE_FILE="${COOKIE_FILE}" node <<'NODE'
   let response = await request(loginStart.current, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ email: "user@example.com", password: "Password123!" }),
+    body: new URLSearchParams({ email: "user@example.com", password: "Gxp#Idp!2026$Secure" }),
   });
   let current = loginStart.current;
   let callbackA;

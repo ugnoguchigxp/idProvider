@@ -1,6 +1,10 @@
 import { createSign, generateKeyPairSync } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { createServerSdkClient } from "../index.js";
+import {
+  createAuthMiddleware,
+  createJwtVerifier,
+  createServerSdkClient,
+} from "../index.js";
 
 const discovery = {
   issuer: "https://login.example.com",
@@ -70,6 +74,18 @@ const createSignedIdToken = (claims: Record<string, unknown>) => {
     jwks: { keys: [{ ...publicJwk, kid, use: "sig", alg: "RS256" }] },
   };
 };
+
+const createVerifierFetch = (jwks: { keys: Array<Record<string, unknown>> }) =>
+  vi.fn(async (url: string | URL | Request) => {
+    const target = String(url);
+    if (target.endsWith("/.well-known/openid-configuration")) {
+      return Response.json(discovery);
+    }
+    if (target.endsWith("/jwks")) {
+      return Response.json(jwks);
+    }
+    return new Response("not found", { status: 404 });
+  });
 
 describe("server-sdk", () => {
   it("creates an authorization URL with PKCE parameters", async () => {
@@ -325,6 +341,103 @@ describe("server-sdk", () => {
       code: "oidc_rate_limited",
       name: "ServerSdkError",
       retryable: true,
+    });
+  });
+
+  it("verifies service access token with required scope", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const { idToken: token, jwks } = createSignedIdToken({
+      iss: discovery.issuer,
+      aud: "service-api",
+      sub: "svc-gateway",
+      client_id: "svc-client",
+      scope: "service.read service.write",
+      exp: now + 300,
+      nbf: now - 30,
+      iat: now - 30,
+    });
+    const fetch = createVerifierFetch(
+      jwks as { keys: Array<Record<string, unknown>> },
+    );
+    const verifier = createJwtVerifier({
+      issuer: discovery.issuer,
+      audience: "service-api",
+      fetch: fetch as unknown as typeof globalThis.fetch,
+    });
+
+    const verified = await verifier.verifyAccessToken(token, {
+      requiredScopes: ["service.read"],
+    });
+
+    expect(verified.sub).toBe("svc-gateway");
+    expect(verified.clientId).toBe("svc-client");
+    expect(verified.scope).toEqual(["service.read", "service.write"]);
+  });
+
+  it("returns token_expired for expired service token", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const { idToken: token, jwks } = createSignedIdToken({
+      iss: discovery.issuer,
+      aud: "service-api",
+      sub: "svc-gateway",
+      scope: "service.read",
+      exp: now - 120,
+      iat: now - 600,
+    });
+    const fetch = createVerifierFetch(
+      jwks as { keys: Array<Record<string, unknown>> },
+    );
+    const verifier = createJwtVerifier({
+      issuer: discovery.issuer,
+      audience: "service-api",
+      fetch: fetch as unknown as typeof globalThis.fetch,
+    });
+
+    await expect(verifier.verifyAccessToken(token)).rejects.toMatchObject({
+      code: "token_expired",
+      name: "ServerSdkError",
+    });
+  });
+
+  it("returns insufficient_scope when required scope is missing", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const { idToken: token, jwks } = createSignedIdToken({
+      iss: discovery.issuer,
+      aud: "service-api",
+      sub: "svc-gateway",
+      scope: "service.read",
+      exp: now + 300,
+      iat: now - 30,
+    });
+    const fetch = createVerifierFetch(
+      jwks as { keys: Array<Record<string, unknown>> },
+    );
+    const verifier = createJwtVerifier({
+      issuer: discovery.issuer,
+      audience: "service-api",
+      fetch: fetch as unknown as typeof globalThis.fetch,
+    });
+
+    await expect(
+      verifier.verifyAccessToken(token, {
+        requiredScopes: ["service.write"],
+      }),
+    ).rejects.toMatchObject({
+      code: "insufficient_scope",
+      name: "ServerSdkError",
+    });
+  });
+
+  it("returns missing_token when auth middleware has no bearer token", async () => {
+    const middleware = createAuthMiddleware({
+      issuer: discovery.issuer,
+      audience: "service-api",
+      fetch: vi.fn() as unknown as typeof globalThis.fetch,
+    });
+
+    await expect(middleware.authorize({})).rejects.toMatchObject({
+      code: "missing_token",
+      name: "ServerSdkError",
     });
   });
 });

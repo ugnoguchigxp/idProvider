@@ -17,6 +17,9 @@ type BotProtectedEndpoint =
   | "password_reset";
 type RbacCacheType = "auth" | "ent";
 type RbacCacheOperation = "get" | "set" | "del";
+type RbacAuthorizationResult = "allowed" | "denied";
+type RbacEntitlementResult = "allowed" | "not_entitled" | "limit_exceeded";
+type RbacInvalidationTarget = "user" | "all";
 
 const METRIC_PREFIX = "idp_";
 
@@ -133,6 +136,27 @@ const rbacCacheLookupDurationSeconds = new Histogram({
   registers: [register],
 });
 
+const rbacAuthorizationDecisionTotal = new Counter({
+  name: `${METRIC_PREFIX}rbac_authorization_decision_total`,
+  help: "Authorization decision count",
+  labelNames: ["result"],
+  registers: [register],
+});
+
+const rbacEntitlementDecisionTotal = new Counter({
+  name: `${METRIC_PREFIX}rbac_entitlement_decision_total`,
+  help: "Entitlement decision count",
+  labelNames: ["result"],
+  registers: [register],
+});
+
+const rbacCacheInvalidationTotal = new Counter({
+  name: `${METRIC_PREFIX}rbac_cache_invalidation_total`,
+  help: "RBAC cache invalidation result count",
+  labelNames: ["target", "result"],
+  registers: [register],
+});
+
 export const observeHttpRequest = (input: {
   method: string;
   path: string;
@@ -208,6 +232,28 @@ export const observeRbacCacheLookupDuration = (
   durationSeconds: number,
 ) => {
   rbacCacheLookupDurationSeconds.observe({ type }, durationSeconds);
+};
+
+export const recordRbacAuthorizationDecision = (
+  result: RbacAuthorizationResult,
+) => {
+  rbacAuthorizationDecisionTotal.inc({ result });
+};
+
+export const recordRbacEntitlementDecision = (
+  result: RbacEntitlementResult,
+) => {
+  rbacEntitlementDecisionTotal.inc({ result });
+};
+
+export const recordRbacCacheInvalidation = (input: {
+  target: RbacInvalidationTarget;
+  result: "success" | "error";
+}) => {
+  rbacCacheInvalidationTotal.inc({
+    target: input.target,
+    result: input.result,
+  });
 };
 
 export const metricsRegistry = register;

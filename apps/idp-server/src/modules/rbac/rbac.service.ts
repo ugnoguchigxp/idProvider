@@ -1,8 +1,11 @@
 import {
   observeRbacCacheLookupDuration,
+  recordRbacAuthorizationDecision,
   recordRbacCacheError,
   recordRbacCacheHit,
+  recordRbacCacheInvalidation,
   recordRbacCacheMiss,
+  recordRbacEntitlementDecision,
 } from "../../core/metrics.js";
 import type { RBACRepository } from "./rbac.repository.js";
 import { NoopRBACCache, type RBACCache } from "./rbac-cache.js";
@@ -139,6 +142,7 @@ export class RBACService {
       permissionKey: requiredPermission,
       source: allowed ? "rbac" : null,
     };
+    recordRbacAuthorizationDecision(result.allowed ? "allowed" : "denied");
 
     if (shouldUseCache) {
       try {
@@ -210,6 +214,7 @@ export class RBACService {
         allowed: false as const,
         reason: "not_entitled" as const,
       };
+      recordRbacEntitlementDecision("not_entitled");
       if (shouldUseCache) {
         try {
           await this.cache.set(cacheKey, result, this.negativeTtlSeconds);
@@ -234,6 +239,7 @@ export class RBACService {
           reason: "limit_exceeded" as const,
           limit: current,
         };
+        recordRbacEntitlementDecision("limit_exceeded");
         if (shouldUseCache) {
           try {
             await this.cache.set(cacheKey, result, this.negativeTtlSeconds);
@@ -250,6 +256,7 @@ export class RBACService {
       value: resolved.value,
       scope: resolved.scope,
     };
+    recordRbacEntitlementDecision("allowed");
     if (shouldUseCache) {
       try {
         await this.cache.set(cacheKey, result, this.entitlementTtlSeconds);
@@ -258,6 +265,31 @@ export class RBACService {
       }
     }
     return result;
+  }
+
+  async invalidateUserCache(userId: string): Promise<void> {
+    try {
+      await this.cache.deleteByPrefix(
+        ["rbac", "v1", "auth", this.normalizeKeyPart(userId)].join(":"),
+      );
+      await this.cache.deleteByPrefix(
+        ["rbac", "v1", "ent", this.normalizeKeyPart(userId)].join(":"),
+      );
+      recordRbacCacheInvalidation({ target: "user", result: "success" });
+    } catch (_error: unknown) {
+      recordRbacCacheError("del");
+      recordRbacCacheInvalidation({ target: "user", result: "error" });
+    }
+  }
+
+  async invalidateAllCache(): Promise<void> {
+    try {
+      await this.cache.deleteByPrefix("rbac:v1:");
+      recordRbacCacheInvalidation({ target: "all", result: "success" });
+    } catch (_error: unknown) {
+      recordRbacCacheError("del");
+      recordRbacCacheInvalidation({ target: "all", result: "error" });
+    }
   }
 
   private shouldUseCache(userId: string): boolean {

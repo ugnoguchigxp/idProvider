@@ -25,6 +25,8 @@ if (!DATABASE_URL) {
 }
 
 const { db, pool } = createDb(DATABASE_URL);
+const SEED_TEST_USER_PASSWORD =
+  process.env.SEED_TEST_USER_PASSWORD || "Gxp#Idp!2026$Secure";
 
 async function seed() {
   console.log("🌱 Starting database seeding...");
@@ -242,31 +244,31 @@ async function seed() {
   const testUsers = [
     {
       email: "admin@example.com",
-      password: "Password123!",
+      password: SEED_TEST_USER_PASSWORD,
       role: "admin",
       displayName: "Admin User",
     },
     {
       email: "sysadmin@example.com",
-      password: "Password123!",
+      password: SEED_TEST_USER_PASSWORD,
       role: "system_admin",
       displayName: "System Admin User",
     },
     {
       email: "support@example.com",
-      password: "Password123!",
+      password: SEED_TEST_USER_PASSWORD,
       role: "support_operator",
       displayName: "Support Operator User",
     },
     {
       email: "auditor@example.com",
-      password: "Password123!",
+      password: SEED_TEST_USER_PASSWORD,
       role: "security_auditor",
       displayName: "Security Auditor User",
     },
     {
       email: "user@example.com",
-      password: "Password123!",
+      password: SEED_TEST_USER_PASSWORD,
       role: "user",
       displayName: "Normal User",
     },
@@ -278,39 +280,55 @@ async function seed() {
       .from(userEmails)
       .where(eq(userEmails.email, testUser.email))
       .limit(1);
-    if (existingEmail.length > 0) {
-      console.log(`  User ${testUser.email} already exists, skipping.`);
-      continue;
-    }
+    let userId: string;
+    if (existingEmail.length > 0 && existingEmail[0]) {
+      userId = existingEmail[0].userId;
+      console.log(
+        `  User ${testUser.email} exists, updating password and role.`,
+      );
+    } else {
+      const [u] = await db
+        .insert(users)
+        .values({ status: "active" })
+        .returning();
+      if (!u) {
+        throw new Error(`Failed to create seed user: ${testUser.email}`);
+      }
+      userId = u.id;
 
-    const [u] = await db.insert(users).values({ status: "active" }).returning();
-    if (!u) {
-      throw new Error(`Failed to create seed user: ${testUser.email}`);
+      await db.insert(userEmails).values({
+        userId,
+        email: testUser.email,
+        isPrimary: true,
+        isVerified: true,
+      });
+      console.log(`  Created user: ${testUser.email}`);
     }
-
-    await db.insert(userEmails).values({
-      userId: u.id,
-      email: testUser.email,
-      isPrimary: true,
-      isVerified: true,
-    });
 
     const passwordHash = await argon2.hash(testUser.password);
-    await db.insert(userPasswords).values({
-      userId: u.id,
-      passwordHash,
-    });
+    await db
+      .insert(userPasswords)
+      .values({
+        userId,
+        passwordHash,
+      })
+      .onConflictDoUpdate({
+        target: userPasswords.userId,
+        set: { passwordHash, updatedAt: new Date() },
+      });
 
     const role = (
       await db.select().from(roles).where(eq(roles.key, testUser.role))
     )[0];
     if (role) {
-      await db.insert(userRoles).values({
-        userId: u.id,
-        roleId: role.id,
-      });
+      await db
+        .insert(userRoles)
+        .values({
+          userId,
+          roleId: role.id,
+        })
+        .onConflictDoNothing();
     }
-    console.log(`  Created user: ${testUser.email}`);
   }
 
   console.log("✅ Seeding completed!");
