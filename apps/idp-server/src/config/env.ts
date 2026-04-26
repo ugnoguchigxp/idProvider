@@ -72,12 +72,14 @@ const envSchema = z
       .default(90),
     RETENTION_BATCH_CHUNK_SIZE: z.coerce.number().int().positive().default(500),
     RETENTION_JOB_LOCK_KEY: z.coerce.number().int().default(91_000_101),
+    RETENTION_JOB_ENABLED: z.coerce.boolean().default(true),
     ACCOUNT_DELETION_GRACE_DAYS: z.coerce
       .number()
       .int()
       .nonnegative()
       .default(30),
     ACCOUNT_DELETION_JOB_LOCK_KEY: z.coerce.number().int().default(91_000_102),
+    ACCOUNT_DELETION_JOB_ENABLED: z.coerce.boolean().default(true),
     RATE_LIMIT_ACCOUNT_DELETE_PER_HOUR: z.coerce
       .number()
       .int()

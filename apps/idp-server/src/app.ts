@@ -2,7 +2,15 @@ import { ApiError, oauthRevocationRequestSchema } from "@idp/shared";
 import { Hono } from "hono";
 import { publicEndpointAdapter } from "./adapters/public-endpoint-adapter.js";
 import type { AppDependencies } from "./core/app-context.js";
+import {
+  markDependencyDown,
+  markDependencyUp,
+  metricsContentType,
+  recordDependencyError,
+  renderMetrics,
+} from "./core/metrics.js";
 import { handleError } from "./middleware/error-handler.js";
+import { httpMetricsMiddleware } from "./middleware/http-metrics.js";
 import { traceMiddleware } from "./middleware/trace.js";
 import { createAuditRoutes } from "./modules/audit/audit.routes.js";
 import { createAuthRoutes } from "./modules/auth/auth.routes.js";
@@ -18,6 +26,7 @@ import { getIpAddress } from "./utils/ip-address.js";
 export const buildApp = (deps: AppDependencies) => {
   const app = new Hono();
 
+  app.use("*", httpMetricsMiddleware);
   app.use("*", traceMiddleware);
   app.onError(handleError);
 
@@ -34,6 +43,10 @@ export const buildApp = (deps: AppDependencies) => {
 
   app.get("/healthz", (c) => c.json({ ok: true }));
   app.get("/readyz", (c) => c.json({ ready: true }));
+  app.get("/metrics", async (c) => {
+    c.header("Content-Type", metricsContentType);
+    return c.body(await renderMetrics());
+  });
 
   const issuer = deps.env.OIDC_ISSUER;
   const consumeDiscoveryRateLimit = async (ipAddress: string | null) => {
@@ -61,6 +74,8 @@ export const buildApp = (deps: AppDependencies) => {
         `${issuer}/.well-known/openid-configuration`,
       );
       if (!response.ok) {
+        markDependencyDown("oidc");
+        recordDependencyError("oidc");
         return c.json(
           {
             code: "oidc_discovery_unavailable",
@@ -69,8 +84,11 @@ export const buildApp = (deps: AppDependencies) => {
           502,
         );
       }
+      markDependencyUp("oidc");
       return c.json(await response.json());
     } catch (_error: unknown) {
+      markDependencyDown("oidc");
+      recordDependencyError("oidc");
       return c.json(
         {
           code: "oidc_discovery_unavailable",

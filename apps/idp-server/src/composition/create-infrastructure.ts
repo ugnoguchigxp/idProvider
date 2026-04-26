@@ -8,6 +8,7 @@ import { createDb, type DbClient } from "@idp/db";
 import type pino from "pino";
 import type { AppEnv } from "../config/env.js";
 import { createLogger } from "../core/logger.js";
+import { markDependencyUp } from "../core/metrics.js";
 import { RateLimiter } from "../core/rate-limiter.js";
 import { createSecurityNotifier } from "../core/security-notifier.js";
 
@@ -33,6 +34,8 @@ export const createInfrastructure = (env: AppEnv): AppInfrastructure => {
     gracePeriodHours: env.JWKS_GRACE_PERIOD_HOURS,
   });
   const rateLimiter = new RateLimiter(redis);
+  markDependencyUp("db");
+  markDependencyUp("redis");
 
   return {
     db,

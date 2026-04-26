@@ -44,6 +44,8 @@ order by created_at;
 ```
 
 ## 5. 復旧チェック
+- [ ] 必要時、`docs/runbooks/restore-rehearsal.md` に沿って復旧を実施
+- [ ] 復旧中は破壊的ジョブ停止を確認（`RETENTION_JOB_ENABLED=false`, `ACCOUNT_DELETION_JOB_ENABLED=false`）
 - [ ] 影響機能の健全性確認
 - [ ] 監視値が平常化したことを確認
 - [ ] 再発兆候がないことを確認
@@ -60,3 +62,4 @@ order by created_at;
 - Initial response の遅延要因は何か
 - 封じ込めの妥当性
 - 監視ルール/Runbook更新点
+- DR drill反映事項（`docs/dr-drill-template.md`）の有無

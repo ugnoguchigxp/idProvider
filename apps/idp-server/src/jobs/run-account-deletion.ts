@@ -10,6 +10,15 @@ const bootstrap = async () => {
   const dryRun = process.argv.includes("--dry-run");
   const lockKey = env.ACCOUNT_DELETION_JOB_LOCK_KEY;
 
+  if (!env.ACCOUNT_DELETION_JOB_ENABLED) {
+    logger.warn(
+      { event: "account_deletion.job.disabled" },
+      "account deletion job skipped because ACCOUNT_DELETION_JOB_ENABLED=false",
+    );
+    await pool.end();
+    process.exit(0);
+  }
+
   const lockClient = await pool.connect();
   try {
     const lockResult = await lockClient.query<{ locked: boolean }>(

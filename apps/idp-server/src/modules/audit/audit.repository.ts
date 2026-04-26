@@ -12,6 +12,7 @@ import {
 } from "@idp/db";
 import type { SQL } from "drizzle-orm";
 import { BaseRepository } from "../../core/base-repository.js";
+import { recordSecurityEventMetric } from "../../core/metrics.js";
 
 export type AuditCursor = {
   createdAt: Date;
@@ -166,6 +167,7 @@ export class AuditRepository extends BaseRepository {
       userId: input.userId,
       payload: input.payload,
     });
+    recordSecurityEventMetric(input.eventType);
   }
 
   async createAuditLog(

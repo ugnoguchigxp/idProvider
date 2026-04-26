@@ -178,6 +178,31 @@ Recovery:
 Exit Criteria:
 - 同一期間で `ok=true` を確認し、再発防止Issue登録済み
 
+### RB-DR-RESTORE: 障害時復旧（Backup/DR）
+Trigger:
+- DB破損、migration失敗、長時間の認証不能
+
+Triage:
+1. 影響範囲（login/refresh/jwks）を特定
+2. RTO/RPO目標とのギャップを試算
+3. 復旧シナリオ（snapshot復元 or PITR）を確定
+
+Containment:
+1. 変更凍結（deploy/admin設定変更）を実施
+2. ジョブ停止フラグを設定
+  - `RETENTION_JOB_ENABLED=false`
+  - `ACCOUNT_DELETION_JOB_ENABLED=false`
+
+Recovery:
+1. `docs/runbooks/restore-rehearsal.md` に沿って復旧
+2. `signing_keys` / login / refresh / jwks の健全性を確認
+3. 安定確認後にジョブ停止フラグを解除
+
+Exit Criteria:
+- `/readyz` 復帰
+- 主要認証フローのエラー率が平常化
+- DR記録テンプレートを1件更新
+
 ## 4. 連絡・エスカレーション
 - 1st responder: On-call engineer
 - 2nd responder: Security Lead

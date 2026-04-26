@@ -3,6 +3,7 @@ import { ApiError, ok } from "@idp/shared";
 import { OAuth2Client } from "google-auth-library";
 import type pino from "pino";
 import type { AppEnv } from "../../config/env.js";
+import { recordLoginResult } from "../../core/metrics.js";
 import { hashPassword, verifyPassword } from "../../core/password.js";
 import type { RateLimiter } from "../../core/rate-limiter.js";
 import { createOpaqueToken, hashOpaqueToken } from "../../core/tokens.js";
@@ -156,6 +157,7 @@ export class AuthService {
       ? await verifyPassword(password, user.passwordHash)
       : false;
     if (!user || !isValidPassword) {
+      recordLoginResult({ result: "failed", mfaEnabled: false });
       await this.deps.authRepository.recordAttempt(email, false, ipAddress);
       await this.createSecurityEvent("login.failed", null, {
         email,
@@ -172,6 +174,7 @@ export class AuthService {
     await this.deps.authRepository.recordAttempt(email, true, ipAddress);
 
     if (user.status !== "active") {
+      recordLoginResult({ result: "failed", mfaEnabled: false });
       await this.createSecurityEvent("login.failed", user.id, {
         email,
         ipAddress,
@@ -194,6 +197,7 @@ export class AuthService {
     }
 
     const session = await this.createSession(user.id, ipAddress, userAgent);
+    recordLoginResult({ result: "success", mfaEnabled });
     await this.createSecurityEvent("login.success", user.id, {
       email,
       ipAddress,

@@ -110,4 +110,11 @@ describe("Global Routes", () => {
     );
     expect(await res.json()).toEqual({ status: "accepted" });
   });
+
+  it("GET /metrics should return prometheus metrics text", async () => {
+    const res = await app.request("/metrics");
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain("idp_http_requests_total");
+  });
 });

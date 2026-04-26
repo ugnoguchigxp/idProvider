@@ -10,6 +10,15 @@ const bootstrap = async () => {
   const dryRun = process.argv.includes("--dry-run");
   const lockKey = env.RETENTION_JOB_LOCK_KEY;
 
+  if (!env.RETENTION_JOB_ENABLED) {
+    logger.warn(
+      { event: "retention.job.disabled" },
+      "data retention job skipped because RETENTION_JOB_ENABLED=false",
+    );
+    await pool.end();
+    process.exit(0);
+  }
+
   const lockClient = await pool.connect();
   try {
     const lockResult = await lockClient.query<{ locked: boolean }>(
