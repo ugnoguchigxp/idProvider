@@ -31,6 +31,18 @@ val token = client.exchangeCode(
   code = "authorization-code",
   codeVerifier = login.codeVerifier
 )
+
+val logout = client.logout(
+  LogoutInput(
+    mode = LogoutMode.GLOBAL,
+    idTokenHint = token.idToken,
+    postLogoutRedirectUri = "com.example.app:/signed-out",
+    clearLocalTokens = {
+      // KeyStore / encrypted storage からtokenを削除
+    },
+  )
+)
+// logout.logoutUrl を Custom Tab 等で開く
 ```
 
 ## 5. エラー処理

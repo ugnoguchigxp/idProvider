@@ -21,6 +21,12 @@ Android/Kotlin向けのOIDCクライアントSDK最小雛形です。
 3. `state` 不一致はセッション破棄してログインをやり直す
 4. エラーログはコードとtrace idのみ記録し、トークン値は出力しない
 
+## Logout Contract
+- `logout(LogoutInput(mode = LOCAL))`: 端末内token削除hookを実行し、IdP sessionは維持
+- `logout(LogoutInput(mode = GLOBAL))`: 端末内token削除hookを実行し、IdP logout URLを返す
+- network revokeを追加する場合も、revoke失敗時に端末内tokenを残さない
+- token本体をログ・永続queueへ保存しない
+
 ## Build/Test
 ```bash
 cd packages/mobile-kotlin-sdk

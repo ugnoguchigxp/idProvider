@@ -9,7 +9,9 @@ describe("User Routes", () => {
   beforeEach(() => {
     deps = {
       authService: {
-        authenticateAccessToken: vi.fn().mockResolvedValue({ userId: "u1" }),
+        authenticateAccessToken: vi
+          .fn()
+          .mockResolvedValue({ userId: "u1", sessionId: "s1" }),
       },
       userService: {
         getMe: vi.fn().mockResolvedValue(
@@ -53,7 +55,12 @@ describe("User Routes", () => {
           .mockResolvedValue(ok({ status: "unlinked" })),
         changePassword: vi.fn().mockResolvedValue(ok({ status: "changed" })),
       },
-      sessionService: { listSessions: vi.fn() },
+      sessionService: {
+        listSessions: vi.fn(),
+        revokeAllSessions: vi
+          .fn()
+          .mockResolvedValue(ok({ status: "revoked_all" })),
+      },
       mfaService: { enrollMfa: vi.fn() },
       mfaRecoveryService: {},
       rbacService: { authorizationCheck: vi.fn() },
@@ -184,6 +191,9 @@ describe("User Routes", () => {
       }),
     });
     expect(res.status).toBe(200);
+    expect(deps.sessionService.revokeAllSessions).toHaveBeenCalledWith("u1");
+    expect(res.headers.get("set-cookie")).toContain("idp_access_token=");
+    expect(res.headers.get("set-cookie")).toContain("Max-Age=0");
   });
 
   it("POST /v1/identities/google/link should succeed", async () => {

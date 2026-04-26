@@ -29,6 +29,16 @@ let tokens = try await client.exchangeCode(
   code: "authorization-code",
   codeVerifier: login.codeVerifier
 )
+
+let logout = try client.logout(LogoutInput(
+  mode: .global,
+  idTokenHint: tokens.idToken,
+  postLogoutRedirectUri: "com.example.app:/signed-out",
+  clearLocalTokens: {
+    // Keychain からtokenを削除
+  }
+))
+// logout.logoutURL を ASWebAuthenticationSession 等で開く
 ```
 
 ## 4. エラー処理

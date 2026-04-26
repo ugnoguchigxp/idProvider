@@ -136,4 +136,38 @@ describe("oidc-client-sdk", () => {
       });
     }
   });
+
+  it("exposes unified local logout behavior", async () => {
+    const fetch = vi.fn(async (url: string | URL | Request) => {
+      const target = String(url);
+      if (target.endsWith("/.well-known/openid-configuration")) {
+        return Response.json(discovery);
+      }
+      if (target.endsWith("/revoke")) {
+        return new Response(null, { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    const clearLocalSession = vi.fn();
+    const client = createOidcClientSdk({
+      issuer: discovery.issuer,
+      clientId: "client",
+      clientSecret: "secret",
+      fetch: fetch as unknown as typeof globalThis.fetch,
+    });
+
+    const result = await client.logout({
+      mode: "local",
+      refreshToken: "rt-1",
+      clearLocalSession,
+    });
+
+    expect(result).toEqual({
+      localSessionCleared: true,
+      refreshTokenRevoked: true,
+      accessTokenRevoked: false,
+      warnings: [],
+    });
+    expect(clearLocalSession).toHaveBeenCalledOnce();
+  });
 });

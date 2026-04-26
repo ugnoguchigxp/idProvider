@@ -3,6 +3,16 @@
 TypeScript で構築した Identity Provider (IdP) モノレポです。  
 Hono ベースの API と `oidc-provider` を組み合わせ、OIDC/OAuth2、認証、認可、監査、運用バッチを一貫して提供します。
 
+## このプロジェクトで得られること
+
+- すぐ動くIdP基盤: clone後に `pnpm bootstrap:local` を実行するだけで、API/OIDC/DBをローカルで起動できるため、認証基盤のPoCや検証を短時間で始められます。
+- 実運用を見据えた認証機能: サインアップ/ログイン、リフレッシュトークン運用、MFA(TOTP)、Passkeys(WebAuthn)、レート制限を標準実装として利用できます。
+- 認可まで含めた統合設計: RBAC判定(`authorization/check`)とentitlement判定(`entitlements/check`)を備え、マイクロサービスやBFFで再利用しやすい形で提供します。
+- SDKとモバイル展開の土台: Node/BFF向けSDKに加え、Kotlin/Swift SDKのMVPと運用ドキュメントがあり、複数クライアントへの展開を進めやすくなります。
+- 監査・セキュリティ運用の組み込み: `audit_logs` / `security_events` 記録、通知トリガー、インシデントrunbookにより、開発時点から運用要件を織り込めます。
+- 仕様と実装の整合性担保: OpenAPI、型検査、テスト、契約テスト、build検証を `pnpm verify` で一括実行でき、変更時の品質確認を標準化できます。
+- OSSとして拡張しやすい構成: apps/packages分離のモノレポ構成により、認証ドメインロジック、SDK、管理UIを独立して拡張・コントリビュートできます。
+
 ## Quickstart
 
 - 30分でローカル起動: [`docs/quickstart/01-local-30min.md`](docs/quickstart/01-local-30min.md)

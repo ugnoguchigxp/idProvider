@@ -14,6 +14,7 @@ import type { AppEnv } from "../../config/env.js";
 import type { RateLimiter } from "../../core/rate-limiter.js";
 import { clearCookie } from "../../utils/cookie.js";
 import type { AuthService } from "../auth/auth.service.js";
+import type { SessionService } from "../sessions/sessions.service.js";
 import type { AccountDeletionService } from "./account-deletion.service.js";
 import type { UserService } from "./users.service.js";
 
@@ -21,6 +22,7 @@ export type UserRoutesDependencies = {
   userService: UserService;
   authService: AuthService;
   accountDeletionService: AccountDeletionService;
+  sessionService: SessionService;
   configService: ConfigService;
   rateLimiter: RateLimiter;
   env: AppEnv;
@@ -52,13 +54,23 @@ export const createUserRoutes = (deps: UserRoutesDependencies) => {
     authenticatedEndpointAdapter({
       schema: passwordChangeRequestSchema,
       authenticate,
-      handler: async (_c, payload, auth) => {
+      handler: async (c, payload, auth) => {
         const result = await deps.userService.changePassword(
           auth.userId,
           payload.currentPassword,
           payload.newPassword,
         );
         if (!result.ok) throw result.error;
+        const revokeResult = await deps.sessionService.revokeAllSessions(
+          auth.userId,
+        );
+        if (!revokeResult.ok) throw revokeResult.error;
+        c.header("Set-Cookie", clearCookie("idp_access_token", secureCookie), {
+          append: true,
+        });
+        c.header("Set-Cookie", clearCookie("idp_csrf_token", secureCookie), {
+          append: true,
+        });
         return result.value;
       },
     }),

@@ -66,6 +66,44 @@ refresh失敗時とstep-up要求時の最小挙動を固定する。
 - local logout（アプリローカルのセッション破棄）と
 - global logout（IdPセッション終了URLへの遷移）を分ける
 
+### 3.6 統一Logout契約
+全SDKは `logout()` を提供し、ゾンビログイン状態を避けるために同じ順序で処理する。
+
+1. refresh/access tokenがあればrevocationを試行
+2. revocation失敗時もlocal session/token保存を削除
+3. `mode = local` の場合はここで完了
+4. `mode = global` の場合はIdP logout URLを返し、呼び出し側がredirectまたは外部ブラウザで開く
+5. IdP logout URL生成に失敗した場合もlocal session/token削除を優先し、`warnings` に理由を返す
+
+共通入力:
+```ts
+type LogoutInput = {
+  mode: "local" | "global";
+  refreshToken?: string;
+  accessToken?: string;
+  idTokenHint?: string;
+  postLogoutRedirectUri?: string;
+  state?: string;
+  clearLocalSession: () => void | Promise<void>;
+};
+```
+
+共通出力:
+```ts
+type LogoutResult = {
+  localSessionCleared: boolean;
+  refreshTokenRevoked: boolean;
+  accessTokenRevoked: boolean;
+  logoutUrl?: string;
+  warnings: string[];
+};
+```
+
+注意:
+- local logoutだけではIdP global sessionは終了しない
+- global logoutは必ずlocal session削除後にIdP logout URLへ遷移する
+- token本体を再試行queueやログへ残さない
+
 ## 4. Node SDK（現行実装）公開API契約
 対象: `packages/server-sdk/src/index.ts`
 
@@ -79,6 +117,7 @@ refresh失敗時とstep-up要求時の最小挙動を固定する。
 - `introspectToken()`
 - `revokeToken()`
 - `createLogoutUrl()`
+- `logout()`
 - `toSessionIdentity()`
 
 ### 4.2 入出力の正規契約

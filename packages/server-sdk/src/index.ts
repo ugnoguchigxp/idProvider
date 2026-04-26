@@ -68,6 +68,26 @@ export type TokenIntrospectionResult = {
   claims: Record<string, unknown>;
 };
 
+export type LogoutMode = "local" | "global";
+
+export type LogoutInput = {
+  mode: LogoutMode;
+  refreshToken?: string;
+  accessToken?: string;
+  idTokenHint?: string;
+  postLogoutRedirectUri?: string;
+  state?: string;
+  clearLocalSession: () => void | Promise<void>;
+};
+
+export type LogoutResult = {
+  localSessionCleared: boolean;
+  refreshTokenRevoked: boolean;
+  accessTokenRevoked: boolean;
+  logoutUrl?: string;
+  warnings: string[];
+};
+
 type DiscoveryDocument = {
   issuer: string;
   authorization_endpoint: string;
@@ -504,6 +524,76 @@ export class ServerSdkClient {
       url.searchParams.set("state", input.state);
     }
     return url.toString();
+  }
+
+  async logout(input: LogoutInput): Promise<LogoutResult> {
+    const warnings: string[] = [];
+    let refreshTokenRevoked = false;
+    let accessTokenRevoked = false;
+    let localSessionCleared = false;
+
+    if (input.refreshToken) {
+      try {
+        await this.revokeToken({
+          token: input.refreshToken,
+          tokenTypeHint: "refresh_token",
+        });
+        refreshTokenRevoked = true;
+      } catch (error) {
+        warnings.push(
+          `refresh_token_revoke_failed:${error instanceof ServerSdkError ? error.code : "unknown"}`,
+        );
+      }
+    }
+
+    if (input.accessToken) {
+      try {
+        await this.revokeToken({
+          token: input.accessToken,
+          tokenTypeHint: "access_token",
+        });
+        accessTokenRevoked = true;
+      } catch (error) {
+        warnings.push(
+          `access_token_revoke_failed:${error instanceof ServerSdkError ? error.code : "unknown"}`,
+        );
+      }
+    }
+
+    try {
+      await input.clearLocalSession();
+      localSessionCleared = true;
+    } catch (error) {
+      warnings.push(
+        `local_session_clear_failed:${error instanceof Error ? error.message : "unknown"}`,
+      );
+      throw error;
+    }
+
+    const result: LogoutResult = {
+      localSessionCleared,
+      refreshTokenRevoked,
+      accessTokenRevoked,
+      warnings,
+    };
+
+    if (input.mode === "global") {
+      try {
+        result.logoutUrl = await this.createLogoutUrl({
+          ...(input.postLogoutRedirectUri
+            ? { postLogoutRedirectUri: input.postLogoutRedirectUri }
+            : {}),
+          ...(input.idTokenHint ? { idTokenHint: input.idTokenHint } : {}),
+          ...(input.state ? { state: input.state } : {}),
+        });
+      } catch (error) {
+        warnings.push(
+          `global_logout_url_failed:${error instanceof ServerSdkError ? error.code : "unknown"}`,
+        );
+      }
+    }
+
+    return result;
   }
 
   private async getDiscovery(): Promise<DiscoveryDocument> {

@@ -319,6 +319,108 @@ describe("server-sdk", () => {
     ).toBe(true);
   });
 
+  it("logs out globally after revoking tokens and clearing local session", async () => {
+    const fetch = createMockFetch();
+    const clearLocalSession = vi.fn();
+    const client = createServerSdkClient({
+      issuer: discovery.issuer,
+      clientId: "client",
+      clientSecret: "secret",
+      fetch: fetch as unknown as typeof globalThis.fetch,
+    });
+
+    const result = await client.logout({
+      mode: "global",
+      refreshToken: "refresh-token",
+      accessToken: "access-token",
+      idTokenHint: "id-token",
+      postLogoutRedirectUri: "https://app.example.com/",
+      state: "logout-state",
+      clearLocalSession,
+    });
+
+    expect(result).toEqual({
+      localSessionCleared: true,
+      refreshTokenRevoked: true,
+      accessTokenRevoked: true,
+      logoutUrl:
+        "https://login.example.com/session/end?post_logout_redirect_uri=https%3A%2F%2Fapp.example.com%2F&id_token_hint=id-token&state=logout-state",
+      warnings: [],
+    });
+    expect(clearLocalSession).toHaveBeenCalledOnce();
+    const revokeCalls = fetch.mock.calls.filter(([url]) =>
+      String(url).endsWith("/revoke"),
+    );
+    expect(revokeCalls).toHaveLength(2);
+  });
+
+  it("clears local session even when token revocation fails", async () => {
+    const fetch = vi.fn(async (url: string | URL | Request) => {
+      const target = String(url);
+      if (target.endsWith("/.well-known/openid-configuration")) {
+        return Response.json(discovery);
+      }
+      if (target.endsWith("/revoke")) {
+        return new Response("server error", { status: 503 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    const clearLocalSession = vi.fn();
+    const client = createServerSdkClient({
+      issuer: discovery.issuer,
+      clientId: "client",
+      clientSecret: "secret",
+      fetch: fetch as unknown as typeof globalThis.fetch,
+    });
+
+    const result = await client.logout({
+      mode: "local",
+      refreshToken: "refresh-token",
+      clearLocalSession,
+    });
+
+    expect(result.localSessionCleared).toBe(true);
+    expect(result.refreshTokenRevoked).toBe(false);
+    expect(result.logoutUrl).toBeUndefined();
+    expect(result.warnings).toEqual([
+      "refresh_token_revoke_failed:oidc_http_error",
+    ]);
+    expect(clearLocalSession).toHaveBeenCalledOnce();
+  });
+
+  it("clears local session even when global logout URL is unsupported", async () => {
+    const fetch = vi.fn(async (url: string | URL | Request) => {
+      const target = String(url);
+      if (target.endsWith("/.well-known/openid-configuration")) {
+        return Response.json({
+          ...discovery,
+          end_session_endpoint: undefined,
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    const clearLocalSession = vi.fn();
+    const client = createServerSdkClient({
+      issuer: discovery.issuer,
+      clientId: "client",
+      clientSecret: "secret",
+      fetch: fetch as unknown as typeof globalThis.fetch,
+    });
+
+    const result = await client.logout({
+      mode: "global",
+      clearLocalSession,
+    });
+
+    expect(result).toEqual({
+      localSessionCleared: true,
+      refreshTokenRevoked: false,
+      accessTokenRevoked: false,
+      warnings: ["global_logout_url_failed:oidc_unsupported"],
+    });
+    expect(clearLocalSession).toHaveBeenCalledOnce();
+  });
+
   it("normalizes rate limit errors", async () => {
     const fetch = vi.fn(async (url: string | URL | Request) => {
       if (String(url).endsWith("/.well-known/openid-configuration")) {

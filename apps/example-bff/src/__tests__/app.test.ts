@@ -35,7 +35,7 @@ describe("example-bff", () => {
         codeVerifier: "verifier",
       })),
       completeAuthorizationCodeCallback: vi.fn(),
-      createLogoutUrl: vi.fn(),
+      logout: vi.fn(),
     };
     const app = createExampleBffApp({ config, sdk });
 
@@ -94,7 +94,7 @@ describe("example-bff", () => {
           },
         },
       })),
-      createLogoutUrl: vi.fn(),
+      logout: vi.fn(),
     };
     const app = createExampleBffApp({ config, sdk });
 
@@ -146,7 +146,7 @@ describe("example-bff", () => {
     const sdk = {
       createAuthorizationUrl: vi.fn(),
       completeAuthorizationCodeCallback: vi.fn(),
-      createLogoutUrl: vi.fn(),
+      logout: vi.fn(),
     };
     const app = createExampleBffApp({ config, sdk });
 
@@ -156,11 +156,53 @@ describe("example-bff", () => {
     expect(sdk.completeAuthorizationCodeCallback).not.toHaveBeenCalled();
   });
 
+  it("clears local session and pending state for local logout", async () => {
+    const sdk = {
+      createAuthorizationUrl: vi.fn(),
+      completeAuthorizationCodeCallback: vi.fn(),
+      logout: vi.fn(async (input: { clearLocalSession: () => void }) => {
+        input.clearLocalSession();
+        return {
+          localSessionCleared: true,
+          refreshTokenRevoked: false,
+          accessTokenRevoked: false,
+          warnings: [],
+        };
+      }),
+    };
+    const app = createExampleBffApp({ config, sdk });
+
+    const response = await app.request("/logout", {
+      method: "POST",
+      redirect: "manual",
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("/");
+    const setCookie = response.headers.get("set-cookie") ?? "";
+    expect(setCookie).toContain(`${sessionCookieName}=`);
+    expect(setCookie).toContain("example_bff_oidc=");
+    expect(setCookie).toContain("Max-Age=0");
+    expect(sdk.logout).toHaveBeenCalledWith({
+      mode: "local",
+      clearLocalSession: expect.any(Function),
+    });
+  });
+
   it("clears local session and redirects to IdP for global logout", async () => {
     const sdk = {
       createAuthorizationUrl: vi.fn(),
       completeAuthorizationCodeCallback: vi.fn(),
-      createLogoutUrl: vi.fn(async () => "https://login.example.com/logout"),
+      logout: vi.fn(async (input: { clearLocalSession: () => void }) => {
+        input.clearLocalSession();
+        return {
+          localSessionCleared: true,
+          refreshTokenRevoked: false,
+          accessTokenRevoked: false,
+          logoutUrl: "https://login.example.com/logout",
+          warnings: [],
+        };
+      }),
     };
     const app = createExampleBffApp({ config, sdk });
 
@@ -176,6 +218,41 @@ describe("example-bff", () => {
     expect(response.headers.get("set-cookie")).toContain(
       `${sessionCookieName}=`,
     );
+    expect(response.headers.get("set-cookie")).toContain("example_bff_oidc=");
     expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
+    expect(sdk.logout).toHaveBeenCalledWith({
+      mode: "global",
+      postLogoutRedirectUri: "https://app.example.com/",
+      clearLocalSession: expect.any(Function),
+    });
+  });
+
+  it("clears local session even when global logout URL is unavailable", async () => {
+    const sdk = {
+      createAuthorizationUrl: vi.fn(),
+      completeAuthorizationCodeCallback: vi.fn(),
+      logout: vi.fn(async (input: { clearLocalSession: () => void }) => {
+        input.clearLocalSession();
+        return {
+          localSessionCleared: true,
+          refreshTokenRevoked: false,
+          accessTokenRevoked: false,
+          warnings: ["global_logout_url_failed:oidc_unsupported"],
+        };
+      }),
+    };
+    const app = createExampleBffApp({ config, sdk });
+
+    const response = await app.request("/logout/global", {
+      method: "POST",
+      redirect: "manual",
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("/");
+    const setCookie = response.headers.get("set-cookie") ?? "";
+    expect(setCookie).toContain(`${sessionCookieName}=`);
+    expect(setCookie).toContain("example_bff_oidc=");
+    expect(setCookie).toContain("Max-Age=0");
   });
 });

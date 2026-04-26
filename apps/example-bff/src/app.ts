@@ -30,9 +30,7 @@ export type ExampleBffConfig = {
 
 type ServerSdk = Pick<
   ServerSdkClient,
-  | "createAuthorizationUrl"
-  | "completeAuthorizationCodeCallback"
-  | "createLogoutUrl"
+  "createAuthorizationUrl" | "completeAuthorizationCodeCallback" | "logout"
 >;
 
 type CreateExampleBffAppOptions = {
@@ -102,6 +100,11 @@ const issueSessionCookie = (
     },
   );
 };
+
+const exampleBffClearCookies = (cookieSecurity: CookieSecurity): string[] => [
+  clearCookie(sessionCookieName, cookieSecurity),
+  clearCookie(oauthStateCookieName, cookieSecurity),
+];
 
 export const createExampleBffApp = ({
   config,
@@ -220,24 +223,32 @@ export const createExampleBffApp = ({
     );
   });
 
-  app.post("/logout", (c) => {
+  app.post("/logout", async (c) => {
     const response = c.redirect("/", 302);
-    appendSetCookie(
-      response.headers,
-      clearCookie(sessionCookieName, config.cookieSecurity),
-    );
+    await sdk.logout({
+      mode: "local",
+      clearLocalSession: () => {
+        for (const cookie of exampleBffClearCookies(config.cookieSecurity)) {
+          appendSetCookie(response.headers, cookie);
+        }
+      },
+    });
     return response;
   });
 
   app.post("/logout/global", async (c) => {
-    const logoutUrl = await sdk.createLogoutUrl({
+    const cookiesToClear: string[] = [];
+    const logout = await sdk.logout({
+      mode: "global",
       postLogoutRedirectUri: postLogoutRedirectUrl(config),
+      clearLocalSession: () => {
+        cookiesToClear.push(...exampleBffClearCookies(config.cookieSecurity));
+      },
     });
-    const response = c.redirect(logoutUrl, 302);
-    appendSetCookie(
-      response.headers,
-      clearCookie(sessionCookieName, config.cookieSecurity),
-    );
+    const response = c.redirect(logout.logoutUrl ?? "/", 302);
+    for (const cookie of cookiesToClear) {
+      appendSetCookie(response.headers, cookie);
+    }
     return response;
   });
 

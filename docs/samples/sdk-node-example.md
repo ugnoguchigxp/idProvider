@@ -57,6 +57,24 @@ const result = await sdk.completeCallback({
 // result.sessionIdentity を local session cookie 用に保存
 ```
 
+logout例:
+```ts
+const logout = await sdk.logout({
+  mode: "global",
+  refreshToken: session.refreshToken,
+  idTokenHint: session.idToken,
+  postLogoutRedirectUri: "http://localhost:5173/",
+  clearLocalSession: async () => {
+    clearBffSessionCookie();
+    clearPendingOidcStateCookie();
+  },
+});
+
+if (logout.logoutUrl) {
+  redirect(logout.logoutUrl);
+}
+```
+
 ## 5. 動作確認
 ```bash
 pnpm verify:example-bff-e2e
@@ -78,3 +96,7 @@ pnpm verify:example-bff-e2e
 3. `oidc_invalid_response`
 - 原因: client設定ミスまたはtokenレスポンス不整合
 - 対処: client secret / redirect URI / grant type を確認する
+
+4. ログアウト後に再ログイン済みに見える
+- 原因: local logoutだけを実行し、IdP global sessionが残っている
+- 対処: 全アプリから明示的に退出させたい場合は `logout({ mode: "global" })` を使う

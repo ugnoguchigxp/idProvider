@@ -21,6 +21,12 @@ iOS/Swift向けのOIDCクライアントSDK最小雛形です。
 3. callback `state` 不一致時は認証試行を破棄してログインを再開始
 4. ログはエラーコードと相関IDのみ保存し、トークンやPIIは記録しない
 
+## Logout Contract
+- `logout(LogoutInput(mode: .local))`: Keychain等のlocal token削除hookを実行し、IdP sessionは維持
+- `logout(LogoutInput(mode: .global))`: local token削除hookを実行し、IdP logout URLを返す
+- network revokeを追加する場合も、revoke失敗時にlocal tokenを残さない
+- token本体をログ・永続queueへ保存しない
+
 ## Build/Test
 ```bash
 cd packages/mobile-swift-sdk

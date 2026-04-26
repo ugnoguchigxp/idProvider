@@ -6,6 +6,8 @@ import {
   createServerSdkClient,
   type EntitlementCheckRequest,
   type EntitlementCheckResponse,
+  type LogoutInput,
+  type LogoutResult,
   type RefreshTokenSet,
   ServerSdkError,
   type ServerSdkOptions,
@@ -145,6 +147,10 @@ export class OidcClientSdk {
   }): Promise<string> {
     return this.serverSdk.createLogoutUrl(input);
   }
+
+  async logout(input: LogoutInput): Promise<LogoutResult> {
+    return this.serverSdk.logout(input);
+  }
 }
 
 export const createOidcClientSdk = (options: OidcClientSdkOptions) =>
@@ -155,5 +161,7 @@ export type {
   AuthorizationCheckResponse,
   EntitlementCheckRequest,
   EntitlementCheckResponse,
+  LogoutInput,
+  LogoutResult,
   SessionIdentity,
 };

@@ -237,6 +237,29 @@ Exit Criteria:
 - 主要認証フローのエラー率が平常化
 - DR記録テンプレートを1件更新
 
+### RB-SESSION-TERMINATION: ゾンビログイン疑い
+Trigger:
+- ログアウト後も別アプリでログイン済みになる
+- 端末紛失・乗っ取り疑いで全セッション失効が必要
+- パスワード変更後に古いrefresh tokenで復帰できる
+
+Triage:
+1. `docs/runbooks/session-termination.md` に沿ってlocal session、IdP session、refresh sessionを分けて確認
+2. BFF cookieとpending OIDC state cookieの削除有無を確認
+3. `refresh_token.reuse_detected` と `login.success` の時系列を確認
+
+Containment:
+1. `POST /v1/sessions/revoke-all` で対象ユーザーの全セッションを失効
+2. 必要に応じてパスワード変更とMFA再設定を要求
+
+Recovery:
+- SDK/BFF側が `logout({ mode: "global" })` を使い、local session削除後にIdP logoutへ遷移していることを確認
+
+Exit Criteria:
+- 古いrefresh tokenで復帰できない
+- 対象アプリのlocal sessionが削除済み
+- 必要なsecurity eventと監査ログが残っている
+
 ## 4. 連絡・エスカレーション
 - 1st responder: On-call engineer
 - 2nd responder: Security Lead

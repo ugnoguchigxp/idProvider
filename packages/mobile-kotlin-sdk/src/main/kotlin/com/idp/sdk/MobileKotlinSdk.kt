@@ -14,6 +14,25 @@ data class TokenResult(
   val expiresIn: Int,
 )
 
+enum class LogoutMode {
+  LOCAL,
+  GLOBAL,
+}
+
+data class LogoutInput(
+  val mode: LogoutMode,
+  val idTokenHint: String? = null,
+  val postLogoutRedirectUri: String? = null,
+  val state: String? = null,
+  val clearLocalTokens: () -> Unit,
+)
+
+data class LogoutResult(
+  val localTokensCleared: Boolean,
+  val logoutUrl: String?,
+  val warnings: List<String> = emptyList(),
+)
+
 class MobileKotlinSdk(
   private val issuer: String,
   private val clientId: String,
@@ -38,4 +57,39 @@ class MobileKotlinSdk(
       expiresIn = 300,
     )
   }
+
+  fun createLogoutUrl(
+    postLogoutRedirectUri: String? = null,
+    idTokenHint: String? = null,
+    state: String? = null,
+  ): String {
+    val params = mutableListOf<String>()
+    if (!postLogoutRedirectUri.isNullOrBlank()) {
+      params.add("post_logout_redirect_uri=${encode(postLogoutRedirectUri)}")
+    }
+    if (!idTokenHint.isNullOrBlank()) {
+      params.add("id_token_hint=${encode(idTokenHint)}")
+    }
+    if (!state.isNullOrBlank()) {
+      params.add("state=${encode(state)}")
+    }
+    val suffix = if (params.isEmpty()) "" else "?${params.joinToString("&")}"
+    return "${issuer.trimEnd('/')}/session/end$suffix"
+  }
+
+  fun logout(input: LogoutInput): LogoutResult {
+    input.clearLocalTokens()
+    val logoutUrl = when (input.mode) {
+      LogoutMode.LOCAL -> null
+      LogoutMode.GLOBAL -> createLogoutUrl(
+        postLogoutRedirectUri = input.postLogoutRedirectUri,
+        idTokenHint = input.idTokenHint,
+        state = input.state,
+      )
+    }
+    return LogoutResult(localTokensCleared = true, logoutUrl = logoutUrl)
+  }
+
+  private fun encode(value: String): String =
+    java.net.URLEncoder.encode(value, Charsets.UTF_8.name()).replace("+", "%20")
 }

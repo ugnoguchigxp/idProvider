@@ -54,7 +54,12 @@ describe("MFA Routes", () => {
           .mockResolvedValue({ challenge: "chall" }),
         verifyRegistrationResponse: vi.fn().mockResolvedValue({ ok: true }),
       },
-      sessionService: { listSessions: vi.fn() },
+      sessionService: {
+        listSessions: vi.fn(),
+        revokeAllSessions: vi
+          .fn()
+          .mockResolvedValue(ok({ status: "revoked_all" })),
+      },
       rbacService: { authorizationCheck: vi.fn() },
       rateLimiter: { consume: vi.fn().mockResolvedValue({ allowed: true }) },
       keyStore: { getPublicJwks: vi.fn() },
@@ -144,6 +149,9 @@ describe("MFA Routes", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.recoveryCodes).toEqual(["ABCDE-FGHJK-LMNPQ-RSTUV"]);
+    expect(deps.sessionService.revokeAllSessions).toHaveBeenCalledWith("u1");
+    expect(res.headers.get("set-cookie")).toContain("idp_access_token=");
+    expect(res.headers.get("set-cookie")).toContain("Max-Age=0");
   });
 
   it("POST /v1/mfa/webauthn/authenticate/options should return options", async () => {
