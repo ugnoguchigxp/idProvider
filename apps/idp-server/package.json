@@ -33,7 +33,7 @@
     "@opentelemetry/sdk-node": "^0.215.0",
     "@opentelemetry/semantic-conventions": "^1.40.0",
     "argon2": "^0.43.0",
-    "drizzle-orm": "^0.44.0",
+    "drizzle-orm": "^0.45.2",
     "google-auth-library": "^10.6.2",
     "hono": "^4.7.7",
     "oidc-provider": "^9.5.1",
