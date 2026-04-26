@@ -170,6 +170,42 @@ export class SessionRepository extends BaseRepository {
       .orderBy(desc(userSessions.createdAt));
   }
 
+  async findLatestByUserId(userId: string, tx?: DbTransaction | DbClient) {
+    const db = tx ?? this.db;
+    const rows = await db
+      .select({
+        id: userSessions.id,
+        ipAddress: userSessions.ipAddress,
+        userAgent: userSessions.userAgent,
+        createdAt: userSessions.createdAt,
+        lastSeenAt: userSessions.lastSeenAt,
+      })
+      .from(userSessions)
+      .where(eq(userSessions.userId, userId))
+      .orderBy(desc(userSessions.lastSeenAt), desc(userSessions.createdAt))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  async hasSeenUserAgent(
+    userId: string,
+    userAgent: string,
+    tx?: DbTransaction | DbClient,
+  ) {
+    const db = tx ?? this.db;
+    const rows = await db
+      .select({ id: userSessions.id })
+      .from(userSessions)
+      .where(
+        and(
+          eq(userSessions.userId, userId),
+          eq(userSessions.userAgent, userAgent),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
+  }
+
   async revokeAllByUserId(userId: string, tx?: DbTransaction | DbClient) {
     const db = tx ?? this.db;
     await db

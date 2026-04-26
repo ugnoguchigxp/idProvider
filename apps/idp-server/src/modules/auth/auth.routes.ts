@@ -253,6 +253,7 @@ export const createAuthRoutes = (deps: AuthRoutesDependencies) => {
       handler: async (c, payload) => {
         const ipAddress = getIpAddress(c.req.header("x-forwarded-for"));
         const userAgent = c.req.header("user-agent") || null;
+        const deviceId = c.req.header("x-device-id") || undefined;
         const rate = await deps.rateLimiter.consume(
           `login:${payload.email}:${ipAddress ?? "unknown"}`,
           deps.env.RATE_LIMIT_LOGIN_PER_MIN,
@@ -305,6 +306,7 @@ export const createAuthRoutes = (deps: AuthRoutesDependencies) => {
             mfaFactorId: payload.mfaFactorId,
             mfaRecoveryCode: payload.mfaRecoveryCode,
           },
+          deviceId,
         );
         if (!result.ok) throw result.error;
         if ("accessToken" in result.value) {
@@ -322,6 +324,7 @@ export const createAuthRoutes = (deps: AuthRoutesDependencies) => {
       handler: async (c, payload) => {
         const ipAddress = getIpAddress(c.req.header("x-forwarded-for"));
         const userAgent = c.req.header("user-agent") || null;
+        const deviceId = c.req.header("x-device-id") || undefined;
         const rate = await deps.rateLimiter.consume(
           `login-google:${ipAddress ?? "unknown"}`,
           deps.env.RATE_LIMIT_LOGIN_PER_MIN,
@@ -366,6 +369,7 @@ export const createAuthRoutes = (deps: AuthRoutesDependencies) => {
           idToken: payload.idToken,
           ipAddress,
           userAgent,
+          ...(deviceId ? { deviceId } : {}),
           mfaCode: payload.mfaCode,
           mfaFactorId: payload.mfaFactorId,
           mfaRecoveryCode: payload.mfaRecoveryCode,

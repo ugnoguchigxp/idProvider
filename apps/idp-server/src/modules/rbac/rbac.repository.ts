@@ -13,6 +13,9 @@ import {
   or,
   permissions,
   rolePermissions,
+  roles,
+  sql,
+  userEmails,
   userRoles,
 } from "@idp/db";
 import { BaseRepository } from "../../core/base-repository.js";
@@ -163,5 +166,71 @@ export class RBACRepository extends BaseRepository {
         ),
       );
     return [...new Set(result.map((r) => r.key))];
+  }
+
+  async listUsersWithPermissionPrefix(
+    permissionPrefix: string,
+    limit: number,
+    tx?: DbTransaction | DbClient,
+  ) {
+    const db = tx ?? this.db;
+    const rows = await db
+      .select({
+        userId: userRoles.userId,
+        roleKey: roles.key,
+        permissionKey: permissions.key,
+        email: userEmails.email,
+      })
+      .from(userRoles)
+      .innerJoin(roles, eq(userRoles.roleId, roles.id))
+      .innerJoin(rolePermissions, eq(roles.id, rolePermissions.roleId))
+      .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
+      .leftJoin(
+        userEmails,
+        and(
+          eq(userEmails.userId, userRoles.userId),
+          eq(userEmails.isPrimary, true),
+        ),
+      )
+      .where(
+        or(
+          sql`${permissions.key} LIKE ${`${permissionPrefix}%`}`,
+          eq(permissions.key, "admin:all"),
+        ),
+      )
+      .limit(limit * 10);
+
+    const byUser = new Map<
+      string,
+      {
+        userId: string;
+        email: string | null;
+        roles: Set<string>;
+        permissions: Set<string>;
+      }
+    >();
+    for (const row of rows) {
+      const existing = byUser.get(row.userId) ?? {
+        userId: row.userId,
+        email: row.email ?? null,
+        roles: new Set<string>(),
+        permissions: new Set<string>(),
+      };
+      existing.roles.add(row.roleKey);
+      existing.permissions.add(row.permissionKey);
+      if (!existing.email && row.email) {
+        existing.email = row.email;
+      }
+      byUser.set(row.userId, existing);
+    }
+
+    return Array.from(byUser.values())
+      .slice(0, limit)
+      .map((row) => ({
+        userId: row.userId,
+        email: row.email,
+        roles: Array.from(row.roles).sort(),
+        permissions: Array.from(row.permissions).sort(),
+      }));
   }
 }

@@ -69,6 +69,21 @@ export class RBACService {
     };
   }
 
+  async getEffectivePermissions(
+    userId: string,
+    context?: { organizationId?: string; groupId?: string },
+  ) {
+    const permissions = await this.rbacRepository.listPermissionKeys(
+      userId,
+      context,
+    );
+    return [...new Set(permissions)].sort();
+  }
+
+  async getAdminAccessSnapshot(limit: number = 100) {
+    return this.rbacRepository.listUsersWithPermissionPrefix("admin.", limit);
+  }
+
   async authorizationCheck(input: {
     userId: string;
     action: string;

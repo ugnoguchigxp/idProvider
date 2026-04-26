@@ -145,6 +145,10 @@ pnpm dev
   - `TURNSTILE_VERIFY_URL`, `TURNSTILE_REQUIRED_ACTIONS`
   - `TURNSTILE_ENFORCE_LOGIN_MODE`, `TURNSTILE_EXPECTED_HOSTNAME`
   - `BOT_RISK_WINDOW_SECONDS`, `BOT_RISK_LOGIN_THRESHOLD_PER_WINDOW`, `BOT_RISK_MEDIUM_WATERMARK_PERCENT`
+- Adaptive MFA (risk-based)
+  - `ADAPTIVE_MFA_ENABLED`, `ADAPTIVE_MFA_REQUIRE_FOR_MEDIUM`
+  - `ADAPTIVE_MFA_IP_FAILURE_WINDOW_SECONDS`, `ADAPTIVE_MFA_IP_FAILURE_HIGH_THRESHOLD`
+  - `ADAPTIVE_MFA_IMPOSSIBLE_TRAVEL_WINDOW_MINUTES`, `ADAPTIVE_MFA_HIGH_RISK_IPS`
 - 観測
   - `LOG_LEVEL`, `OTEL_EXPORTER_OTLP_ENDPOINT`
   - `METRICS_ENABLED`, `METRICS_BEARER_TOKEN`
@@ -155,6 +159,7 @@ pnpm dev
 - retention 系は `ANONYMIZE_DAYS <= DELETE_DAYS` の整合性チェックがあります。
 - 本番環境で `METRICS_ENABLED=true` の場合、`METRICS_BEARER_TOKEN` 必須です。
 - `TURNSTILE_ENABLED=true` の場合、`TURNSTILE_SECRET_KEY` と `TURNSTILE_SITE_KEY` は必須です。
+- `ADAPTIVE_MFA_ENABLED=true` の場合、high risk は拒否され、medium risk は設定に応じて MFA step-up を要求します。
 
 ## API エンドポイント概要
 
@@ -186,6 +191,7 @@ pnpm dev
   - `POST /v1/password/change`
   - `POST /v1/authorization/check`
   - `POST /v1/entitlements/check`
+  - `GET /v1/governance/permissions/me`
   - `GET /v1/sessions`
   - `POST /v1/sessions/revoke`
   - `POST /v1/sessions/revoke-all`
@@ -205,6 +211,7 @@ pnpm dev
   - `GET /v1/admin/keys`
   - `POST /v1/admin/keys/rotate`
   - `POST /v1/admin/keys/rotate-emergency`
+  - `GET /v1/admin/governance/access-snapshot`
 
 ## 管理 UI の使い方
 

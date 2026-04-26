@@ -18,7 +18,10 @@ describe("AuthService", () => {
 
   beforeEach(() => {
     deps = {
-      authRepository: { recordAttempt: vi.fn() },
+      authRepository: {
+        recordAttempt: vi.fn(),
+        countFailedAttemptsByIpSince: vi.fn().mockResolvedValue(0),
+      },
       verificationRepository: {
         createEmailToken: vi.fn(),
         findEmailToken: vi.fn(),
@@ -54,6 +57,8 @@ describe("AuthService", () => {
         rotateTokens: vi.fn(),
         updateLastSeen: vi.fn(),
         revoke: vi.fn(),
+        findLatestByUserId: vi.fn().mockResolvedValue(null),
+        hasSeenUserAgent: vi.fn().mockResolvedValue(true),
       },
       rbacService: {
         getAuthorizationSnapshot: vi
@@ -80,6 +85,12 @@ describe("AuthService", () => {
         BOT_RISK_WINDOW_SECONDS: 600,
         BOT_RISK_LOGIN_THRESHOLD_PER_WINDOW: 20,
         BOT_RISK_MEDIUM_WATERMARK_PERCENT: 20,
+        ADAPTIVE_MFA_ENABLED: false,
+        ADAPTIVE_MFA_REQUIRE_FOR_MEDIUM: true,
+        ADAPTIVE_MFA_IP_FAILURE_WINDOW_SECONDS: 900,
+        ADAPTIVE_MFA_IP_FAILURE_HIGH_THRESHOLD: 20,
+        ADAPTIVE_MFA_IMPOSSIBLE_TRAVEL_WINDOW_MINUTES: 30,
+        ADAPTIVE_MFA_HIGH_RISK_IPS: [],
       },
       logger: { info: vi.fn(), error: vi.fn() },
     };

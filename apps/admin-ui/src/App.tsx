@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import {
   checkPermission,
   getAdminConfigs,
+  getMyGovernancePermissions,
   updateGoogleSocialLogin,
 } from "./lib/admin-api";
 import {
@@ -23,6 +24,10 @@ export const App = () => {
     queryKey: ["permission", "admin.config:write"],
     queryFn: () => checkPermission("admin.config:write"),
     retry: false,
+  });
+  const governanceQuery = useQuery({
+    queryKey: ["governance", "permissions", "me"],
+    queryFn: getMyGovernancePermissions,
   });
 
   const form = useForm<SocialLoginUpdateInput>({
@@ -54,6 +59,11 @@ export const App = () => {
       <header className="pageHeader">
         <h1>Admin Settings</h1>
         <p>Cookie 認証を前提に設定を更新します。</p>
+        {governanceQuery.data ? (
+          <p>
+            Effective permissions: {governanceQuery.data.permissions.join(", ")}
+          </p>
+        ) : null}
       </header>
 
       <section className="card">

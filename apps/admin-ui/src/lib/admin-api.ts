@@ -4,6 +4,8 @@ import {
   type AuthorizationCheckResponse,
   adminConfigsResponseSchema,
   authorizationCheckResponseSchema,
+  type GovernancePermissionsMeResponse,
+  governancePermissionsMeResponseSchema,
   type SocialLoginUpdateInput,
   socialLoginUpdateSchema,
 } from "./schemas";
@@ -44,3 +46,14 @@ export const checkPermission = async (
   });
   return authorizationCheckResponseSchema.parse(data);
 };
+
+export const getMyGovernancePermissions =
+  async (): Promise<GovernancePermissionsMeResponse> => {
+    const data = await apiClient.request<unknown>(
+      "/v1/governance/permissions/me",
+      {
+        method: "GET",
+      },
+    );
+    return governancePermissionsMeResponseSchema.parse(data);
+  };

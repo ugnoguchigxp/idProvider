@@ -26,7 +26,16 @@ export const authorizationCheckResponseSchema = z.object({
   source: z.string().nullable().optional(),
 });
 
+export const governancePermissionsMeResponseSchema = z.object({
+  userId: z.string(),
+  permissions: z.array(z.string()),
+  entitlements: z.record(z.string(), z.unknown()),
+});
+
 export type AdminConfigsResponse = z.infer<typeof adminConfigsResponseSchema>;
 export type AuthorizationCheckResponse = z.infer<
   typeof authorizationCheckResponseSchema
+>;
+export type GovernancePermissionsMeResponse = z.infer<
+  typeof governancePermissionsMeResponseSchema
 >;

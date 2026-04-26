@@ -34,9 +34,131 @@ export type AuthServiceDependencies = {
 };
 
 export type BotRiskLevel = "low" | "medium" | "high";
+export type AdaptiveRiskLevel = "low" | "medium" | "high";
+
+type AdaptiveRiskAssessment = {
+  level: AdaptiveRiskLevel;
+  score: number;
+  factors: Array<{
+    factor: "new_device" | "impossible_travel" | "ip_reputation";
+    severity: "low" | "medium" | "high";
+    details?: Record<string, unknown>;
+  }>;
+};
 
 export class AuthService {
   constructor(private deps: AuthServiceDependencies) {}
+
+  private buildSessionUserAgent(
+    userAgent: string | null,
+    deviceId?: string,
+  ): string | null {
+    const normalizedUserAgent = userAgent?.trim() || null;
+    const normalizedDeviceId = deviceId?.trim() || null;
+    if (!normalizedUserAgent && !normalizedDeviceId) {
+      return null;
+    }
+    if (!normalizedDeviceId) {
+      return normalizedUserAgent;
+    }
+    return `${normalizedUserAgent ?? "unknown-agent"} | did:${normalizedDeviceId}`;
+  }
+
+  private isIpReputationHigh(ipAddress: string | null): boolean {
+    if (!ipAddress) return false;
+    const highRiskIps = this.deps.env.ADAPTIVE_MFA_HIGH_RISK_IPS ?? [];
+    return highRiskIps.includes(ipAddress);
+  }
+
+  private async assessAdaptiveRisk(input: {
+    userId: string;
+    ipAddress: string | null;
+    sessionUserAgent: string | null;
+  }): Promise<AdaptiveRiskAssessment> {
+    const factors: AdaptiveRiskAssessment["factors"] = [];
+    let score = 0;
+
+    if (this.isIpReputationHigh(input.ipAddress)) {
+      factors.push({
+        factor: "ip_reputation",
+        severity: "high",
+        details: { ipAddress: input.ipAddress },
+      });
+      score += 70;
+    }
+
+    if (input.ipAddress) {
+      const failedCount =
+        await this.deps.authRepository.countFailedAttemptsByIpSince(
+          input.ipAddress,
+          new Date(
+            Date.now() -
+              this.deps.env.ADAPTIVE_MFA_IP_FAILURE_WINDOW_SECONDS * 1000,
+          ),
+        );
+      if (failedCount >= this.deps.env.ADAPTIVE_MFA_IP_FAILURE_HIGH_THRESHOLD) {
+        factors.push({
+          factor: "ip_reputation",
+          severity: "medium",
+          details: { failedCount },
+        });
+        score += 35;
+      }
+    }
+
+    const latestSession = await this.deps.sessionRepository.findLatestByUserId(
+      input.userId,
+    );
+    if (latestSession) {
+      if (
+        input.sessionUserAgent &&
+        !(await this.deps.sessionRepository.hasSeenUserAgent(
+          input.userId,
+          input.sessionUserAgent,
+        ))
+      ) {
+        factors.push({
+          factor: "new_device",
+          severity: "medium",
+        });
+        score += 30;
+      }
+
+      if (
+        latestSession.ipAddress &&
+        input.ipAddress &&
+        latestSession.ipAddress !== input.ipAddress
+      ) {
+        const elapsedMs =
+          Date.now() -
+          (latestSession.lastSeenAt ?? latestSession.createdAt).getTime();
+        const windowMs =
+          this.deps.env.ADAPTIVE_MFA_IMPOSSIBLE_TRAVEL_WINDOW_MINUTES *
+          60 *
+          1000;
+        if (elapsedMs <= windowMs) {
+          factors.push({
+            factor: "impossible_travel",
+            severity: "high",
+            details: {
+              previousIpAddress: latestSession.ipAddress,
+              currentIpAddress: input.ipAddress,
+              elapsedMs,
+            },
+          });
+          score += 45;
+        }
+      }
+    }
+
+    const level: AdaptiveRiskLevel =
+      score >= 70 ? "high" : score >= 35 ? "medium" : "low";
+    return {
+      level,
+      score,
+      factors,
+    };
+  }
 
   private async createSecurityEvent(
     eventType: string,
@@ -205,6 +327,7 @@ export class AuthService {
       mfaFactorId?: string | undefined;
       mfaRecoveryCode?: string | undefined;
     },
+    deviceId?: string,
   ) {
     if (mfa?.mfaCode && mfa.mfaRecoveryCode) {
       throw new ApiError(
@@ -251,19 +374,75 @@ export class AuthService {
     }
 
     const mfaEnabled = await this.deps.mfaService.hasEnabledMfa(user.id);
+    const sessionUserAgent = this.buildSessionUserAgent(userAgent, deviceId);
+    const adaptiveRisk = this.deps.env.ADAPTIVE_MFA_ENABLED
+      ? await this.assessAdaptiveRisk({
+          userId: user.id,
+          ipAddress,
+          sessionUserAgent,
+        })
+      : { level: "low", score: 0, factors: [] };
+
+    if (adaptiveRisk.level === "high") {
+      await this.createSecurityEvent("adaptive_mfa.blocked", user.id, {
+        email,
+        ipAddress,
+        score: adaptiveRisk.score,
+        factors: adaptiveRisk.factors,
+      });
+      throw new ApiError(
+        403,
+        "adaptive_mfa_blocked",
+        "Request blocked by adaptive risk policy",
+      );
+    }
+
+    if (
+      adaptiveRisk.level === "medium" &&
+      !mfaEnabled &&
+      this.deps.env.ADAPTIVE_MFA_REQUIRE_FOR_MEDIUM
+    ) {
+      await this.createSecurityEvent(
+        "adaptive_mfa.enrollment_required",
+        user.id,
+        {
+          email,
+          ipAddress,
+          score: adaptiveRisk.score,
+          factors: adaptiveRisk.factors,
+        },
+      );
+      throw new ApiError(
+        401,
+        "adaptive_mfa_enrollment_required",
+        "MFA enrollment is required for this login",
+      );
+    }
+
     if (mfaEnabled && !mfa?.mfaCode && !mfa?.mfaRecoveryCode) {
-      return ok({ mfaRequired: true, userId: user.id });
+      return ok({
+        mfaRequired: true,
+        userId: user.id,
+        ...(adaptiveRisk.level !== "low" ? { adaptiveRisk } : {}),
+      });
     }
     if (mfaEnabled) {
       await this.enforceMfaForLogin(user.id, ipAddress, mfa);
     }
 
-    const session = await this.createSession(user.id, ipAddress, userAgent);
+    const session = await this.createSession(
+      user.id,
+      ipAddress,
+      sessionUserAgent,
+    );
     recordLoginResult({ result: "success", mfaEnabled });
     await this.createSecurityEvent("login.success", user.id, {
       email,
       ipAddress,
       mfaEnabled,
+      adaptiveRiskLevel: adaptiveRisk.level,
+      adaptiveRiskScore: adaptiveRisk.score,
+      adaptiveRiskFactors: adaptiveRisk.factors,
     });
     return ok({
       status: "ok",
@@ -273,6 +452,7 @@ export class AuthService {
       accessExpiresAt: session.accessExpiresAt,
       refreshExpiresAt: session.refreshExpiresAt,
       mfaEnabled,
+      adaptiveRisk,
     });
   }
 
@@ -507,6 +687,7 @@ export class AuthService {
       idToken: string;
       ipAddress: string | null;
       userAgent: string | null;
+      deviceId?: string;
     } & {
       mfaCode?: string | undefined;
       mfaFactorId?: string | undefined;
@@ -605,11 +786,52 @@ export class AuthService {
     const hasLocalPassword = Boolean(
       await this.deps.userRepository.findWithPasswordById(userId),
     );
+    const sessionUserAgent = this.buildSessionUserAgent(
+      input.userAgent,
+      input.deviceId,
+    );
+    const adaptiveRisk = this.deps.env.ADAPTIVE_MFA_ENABLED
+      ? await this.assessAdaptiveRisk({
+          userId,
+          ipAddress: input.ipAddress,
+          sessionUserAgent,
+        })
+      : { level: "low", score: 0, factors: [] };
+
+    if (adaptiveRisk.level === "high") {
+      await this.createSecurityEvent("adaptive_mfa.blocked", userId, {
+        provider: "google",
+        ipAddress: input.ipAddress,
+        score: adaptiveRisk.score,
+        factors: adaptiveRisk.factors,
+      });
+      throw new ApiError(
+        403,
+        "adaptive_mfa_blocked",
+        "Request blocked by adaptive risk policy",
+      );
+    }
+
     let mfaEnabled = false;
     if (hasLocalPassword) {
       mfaEnabled = await this.deps.mfaService.hasEnabledMfa(userId);
+      if (
+        adaptiveRisk.level === "medium" &&
+        !mfaEnabled &&
+        this.deps.env.ADAPTIVE_MFA_REQUIRE_FOR_MEDIUM
+      ) {
+        throw new ApiError(
+          401,
+          "adaptive_mfa_enrollment_required",
+          "MFA enrollment is required for this login",
+        );
+      }
       if (mfaEnabled && !input.mfaCode && !input.mfaRecoveryCode) {
-        return ok({ mfaRequired: true, userId });
+        return ok({
+          mfaRequired: true,
+          userId,
+          ...(adaptiveRisk.level !== "low" ? { adaptiveRisk } : {}),
+        });
       }
       if (mfaEnabled) {
         await this.enforceMfaForLogin(userId, input.ipAddress, {
@@ -623,13 +845,16 @@ export class AuthService {
     const session = await this.createSession(
       userId,
       input.ipAddress,
-      input.userAgent,
+      sessionUserAgent,
     );
     await this.createSecurityEvent("login.success", userId, {
       provider: "google",
       email,
       ipAddress: input.ipAddress,
       mfaEnabled,
+      adaptiveRiskLevel: adaptiveRisk.level,
+      adaptiveRiskScore: adaptiveRisk.score,
+      adaptiveRiskFactors: adaptiveRisk.factors,
     });
     return ok({
       status: "ok",
@@ -639,6 +864,7 @@ export class AuthService {
       accessExpiresAt: session.accessExpiresAt,
       refreshExpiresAt: session.refreshExpiresAt,
       mfaEnabled,
+      adaptiveRisk,
     });
   }
 

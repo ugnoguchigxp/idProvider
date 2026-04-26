@@ -173,6 +173,32 @@ const envSchema = z
       .min(1)
       .max(100)
       .default(20),
+    ADAPTIVE_MFA_ENABLED: envBoolean(false),
+    ADAPTIVE_MFA_REQUIRE_FOR_MEDIUM: envBoolean(true),
+    ADAPTIVE_MFA_IP_FAILURE_WINDOW_SECONDS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(900),
+    ADAPTIVE_MFA_IP_FAILURE_HIGH_THRESHOLD: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(20),
+    ADAPTIVE_MFA_IMPOSSIBLE_TRAVEL_WINDOW_MINUTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(30),
+    ADAPTIVE_MFA_HIGH_RISK_IPS: z
+      .string()
+      .default("")
+      .transform((value) =>
+        value
+          .split(",")
+          .map((v) => v.trim())
+          .filter((v) => v.length > 0),
+      ),
     JWT_PRIVATE_KEY: z.string().min(1),
     DATABASE_URL: z.string().url(),
     REDIS_URL: z.string().url(),
