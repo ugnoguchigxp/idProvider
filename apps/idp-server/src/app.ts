@@ -25,6 +25,8 @@ import { getIpAddress } from "./utils/ip-address.js";
 
 export const buildApp = (deps: AppDependencies) => {
   const app = new Hono();
+  const metricsEnabled = deps.env.METRICS_ENABLED ?? true;
+  const metricsBearerToken = deps.env.METRICS_BEARER_TOKEN?.trim() || "";
 
   app.use("*", httpMetricsMiddleware);
   app.use("*", traceMiddleware);
@@ -42,8 +44,55 @@ export const buildApp = (deps: AppDependencies) => {
   app.route("/", createAuditRoutes(deps));
 
   app.get("/healthz", (c) => c.json({ ok: true }));
-  app.get("/readyz", (c) => c.json({ ready: true }));
+  app.get("/readyz", async (c) => {
+    const [dbCheck, redisCheck] = await Promise.allSettled([
+      deps.configService.getNotificationConfig(),
+      deps.redis.ping(),
+    ]);
+
+    const dbReady = dbCheck.status === "fulfilled";
+    const redisReady =
+      redisCheck.status === "fulfilled" && redisCheck.value === "PONG";
+
+    if (dbReady) {
+      markDependencyUp("db");
+    } else {
+      markDependencyDown("db");
+      recordDependencyError("db");
+    }
+
+    if (redisReady) {
+      markDependencyUp("redis");
+    } else {
+      markDependencyDown("redis");
+      recordDependencyError("redis");
+    }
+
+    if (!dbReady || !redisReady) {
+      return c.json(
+        {
+          code: "dependency_unavailable",
+          message: "One or more dependencies are unavailable",
+        },
+        503,
+      );
+    }
+
+    return c.json({ ready: true });
+  });
   app.get("/metrics", async (c) => {
+    if (!metricsEnabled) {
+      return c.notFound();
+    }
+    if (metricsBearerToken.length > 0) {
+      const authorization = c.req.header("authorization");
+      if (authorization !== `Bearer ${metricsBearerToken}`) {
+        return c.json(
+          { code: "unauthorized", message: "Unauthorized metrics access" },
+          401,
+        );
+      }
+    }
     c.header("Content-Type", metricsContentType);
     return c.body(await renderMetrics());
   });

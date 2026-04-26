@@ -142,11 +142,13 @@ pnpm dev
   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
 - 観測
   - `LOG_LEVEL`, `OTEL_EXPORTER_OTLP_ENDPOINT`
+  - `METRICS_ENABLED`, `METRICS_BEARER_TOKEN`
 
 補足:
 
 - 本番環境では `JWT_PRIVATE_KEY` に開発用値を使えないようにバリデーションしています。
 - retention 系は `ANONYMIZE_DAYS <= DELETE_DAYS` の整合性チェックがあります。
+- 本番環境で `METRICS_ENABLED=true` の場合、`METRICS_BEARER_TOKEN` 必須です。
 
 ## API エンドポイント概要
 

@@ -126,6 +126,8 @@ const envSchema = z
       .positive()
       .default(5),
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+    METRICS_ENABLED: envBoolean(true),
+    METRICS_BEARER_TOKEN: z.string().default(""),
     JWT_PRIVATE_KEY: z.string().min(1),
     DATABASE_URL: z.string().url(),
     REDIS_URL: z.string().url(),
@@ -161,6 +163,19 @@ const envSchema = z
         message:
           "MFA_RECOVERY_CODE_PEPPER must not use the development default in production",
         path: ["MFA_RECOVERY_CODE_PEPPER"],
+      });
+    }
+
+    if (
+      env.NODE_ENV === "production" &&
+      env.METRICS_ENABLED &&
+      env.METRICS_BEARER_TOKEN.trim().length === 0
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "METRICS_BEARER_TOKEN must be set when METRICS_ENABLED=true in production",
+        path: ["METRICS_BEARER_TOKEN"],
       });
     }
 

@@ -11,6 +11,9 @@ importers:
       '@biomejs/biome':
         specifier: ^2.4.13
         version: 2.4.13
+      '@vitest/coverage-v8':
+        specifier: ^3.1.2
+        version: 3.2.4(vitest@3.2.4(@types/node@24.12.2)(msw@2.13.5(@types/node@24.12.2)(typescript@5.9.3)))
       husky:
         specifier: ^9.1.7
         version: 9.1.7

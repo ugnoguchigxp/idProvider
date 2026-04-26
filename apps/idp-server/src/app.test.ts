@@ -18,6 +18,8 @@ describe("Global Routes", () => {
         OAUTH_CLIENT_SECRET: "client-secret",
         RATE_LIMIT_OAUTH_PER_MIN: 10,
         RATE_LIMIT_DISCOVERY_PER_MIN: 10,
+        METRICS_ENABLED: true,
+        METRICS_BEARER_TOKEN: "",
       },
       authService: {
         revokeByToken: vi.fn().mockResolvedValue(ok({ status: "accepted" })),
@@ -38,8 +40,12 @@ describe("Global Routes", () => {
           ),
       },
       webauthnService: {},
-      configService: {},
-      redis: {},
+      configService: {
+        getNotificationConfig: vi.fn().mockResolvedValue({}),
+      },
+      redis: {
+        ping: vi.fn().mockResolvedValue("PONG"),
+      },
       logger: { info: vi.fn(), error: vi.fn() },
       rateLimiter: { consume: vi.fn().mockResolvedValue({ allowed: true }) },
     };
@@ -116,5 +122,43 @@ describe("Global Routes", () => {
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(text).toContain("idp_http_requests_total");
+  });
+
+  it("GET /metrics should require bearer token when configured", async () => {
+    deps.env.METRICS_BEARER_TOKEN = "metrics-secret";
+    app = buildApp(deps);
+    const res = await app.request("/metrics");
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({
+      code: "unauthorized",
+      message: "Unauthorized metrics access",
+    });
+  });
+
+  it("GET /metrics should return 200 with valid bearer token", async () => {
+    deps.env.METRICS_BEARER_TOKEN = "metrics-secret";
+    app = buildApp(deps);
+    const res = await app.request("/metrics", {
+      headers: {
+        authorization: "Bearer metrics-secret",
+      },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /readyz should return 200 when db and redis are reachable", async () => {
+    const res = await app.request("/readyz");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ready: true });
+  });
+
+  it("GET /readyz should return 503 when redis is unavailable", async () => {
+    deps.redis.ping.mockRejectedValueOnce(new Error("redis down"));
+    const res = await app.request("/readyz");
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({
+      code: "dependency_unavailable",
+      message: "One or more dependencies are unavailable",
+    });
   });
 });

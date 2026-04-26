@@ -20,7 +20,7 @@
 - Authorization Code flow: Supported
 - PKCE required: Supported (always required)
 - Client authentication (`client_secret_basic`): Supported
-- Static client registration: Supported（環境変数ベース）
+- Static client registration: Supported（DB管理 / Admin API経由。旧環境変数フォールバックは移行期間中のみ）
 
 ## 3. Claims
 ### 3.1 Standard Claims
@@ -46,7 +46,7 @@
 - `token_endpoint_auth_method`: `client_secret_basic`
 - `grant_types`: `authorization_code`, `refresh_token`
 - `response_types`: `code`
-- `redirect_uris`: `OIDC_CLIENT_REDIRECT_URIS` 環境変数で管理
+- `redirect_uris`: Admin API経由でクライアントごとにDBで管理
 
 ## 5. エラー/レート制限
 - OAuth endpoints は `401`（client認証失敗）を返す

@@ -41,4 +41,15 @@ describe("loadEnv", () => {
       }),
     ).toThrow(/RETENTION_JOB_ENABLED/);
   });
+
+  it("requires metrics token in production when metrics are enabled", () => {
+    expect(() =>
+      loadEnv({
+        ...baseEnv,
+        NODE_ENV: "production",
+        METRICS_ENABLED: "true",
+        METRICS_BEARER_TOKEN: "",
+      }),
+    ).toThrow(/METRICS_BEARER_TOKEN/);
+  });
 });
