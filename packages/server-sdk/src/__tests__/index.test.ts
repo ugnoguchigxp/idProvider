@@ -83,6 +83,39 @@ describe("server-sdk", () => {
     });
   });
 
+  it("rejects malformed token responses", async () => {
+    const fetch = vi.fn(async (url: string | URL | Request) => {
+      const target = String(url);
+      if (target.endsWith("/.well-known/openid-configuration")) {
+        return Response.json(discovery);
+      }
+      if (target.endsWith("/token")) {
+        return Response.json({
+          access_token: "access-token",
+          expires_in: 300,
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    const client = createServerSdkClient({
+      issuer: discovery.issuer,
+      clientId: "client",
+      clientSecret: "secret",
+      fetch: fetch as unknown as typeof globalThis.fetch,
+    });
+
+    await expect(
+      client.exchangeCode({
+        code: "code",
+        redirectUri: "https://app.example.com/callback",
+        codeVerifier: "verifier",
+      }),
+    ).rejects.toMatchObject({
+      code: "oidc_invalid_response",
+      name: "ServerSdkError",
+    });
+  });
+
   it("normalizes rate limit errors", async () => {
     const fetch = vi.fn(async (url: string | URL | Request) => {
       if (String(url).endsWith("/.well-known/openid-configuration")) {

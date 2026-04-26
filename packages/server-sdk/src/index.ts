@@ -81,7 +81,11 @@ const sha256Base64Url = (value: string): string =>
 const randomToken = (): string => base64Url(randomBytes(32));
 
 const decodeJson = (value: string): Record<string, unknown> => {
-  return JSON.parse(base64UrlToBuffer(value).toString("utf8"));
+  try {
+    return JSON.parse(base64UrlToBuffer(value).toString("utf8"));
+  } catch (_error) {
+    throw new ServerSdkError("oidc_invalid_token", "Invalid token JSON");
+  }
 };
 
 const toBasic = (clientId: string, clientSecret: string): string =>
@@ -155,11 +159,23 @@ export class ServerSdkClient {
       redirect_uri: input.redirectUri,
       code_verifier: input.codeVerifier,
     });
+    if (
+      typeof response.id_token !== "string" ||
+      typeof response.access_token !== "string" ||
+      typeof response.expires_in !== "number" ||
+      !Number.isFinite(response.expires_in) ||
+      response.expires_in <= 0
+    ) {
+      throw new ServerSdkError(
+        "oidc_invalid_response",
+        "OIDC token response is missing required fields",
+      );
+    }
 
     const tokenSet: TokenSet = {
-      idToken: String(response.id_token),
-      accessToken: String(response.access_token),
-      expiresIn: Number(response.expires_in),
+      idToken: response.id_token,
+      accessToken: response.access_token,
+      expiresIn: response.expires_in,
     };
     if (typeof response.refresh_token === "string") {
       tokenSet.refreshToken = response.refresh_token;
@@ -207,11 +223,22 @@ export class ServerSdkClient {
     if (claims.iss !== discovery.issuer) {
       throw new ServerSdkError("oidc_invalid_token", "Invalid issuer");
     }
-    const audienceMatches =
-      claims.aud === this.options.clientId ||
-      (Array.isArray(claims.aud) && claims.aud.includes(this.options.clientId));
-    if (!audienceMatches) {
+    const audience = claims.aud;
+    if (
+      audience !== this.options.clientId &&
+      !(Array.isArray(audience) && audience.includes(this.options.clientId))
+    ) {
       throw new ServerSdkError("oidc_invalid_token", "Invalid audience");
+    }
+    if (
+      Array.isArray(audience) &&
+      audience.length > 1 &&
+      claims.azp !== this.options.clientId
+    ) {
+      throw new ServerSdkError(
+        "oidc_invalid_token",
+        "Invalid authorized party",
+      );
     }
     if (typeof claims.exp !== "number" || claims.exp <= now) {
       throw new ServerSdkError("oidc_invalid_token", "ID Token is expired");
